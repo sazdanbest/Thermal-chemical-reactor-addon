@@ -80,6 +80,14 @@ dependencies {
     implementation fg.deobf("thermal:thermal_foundation:1.19.2-10.3.1.57")
     implementation fg.deobf("thermal:thermal_expansion:1.19.2-10.3.1.25")
 
+    // thermal_core зашит внутрь thermal_foundation.jar как jarjar-вложение
+    // (META-INF/jarjar/thermal_core-1.19.2-10.3.0.9.jar) — Forge разворачивает такие
+    // вложения только во время игры (через jarjar-loader), а не на этапе компиляции.
+    // Поэтому cofh.thermal.lib.* (пакет, живущий именно в thermal_core, а не в
+    // thermal_foundation) не резолвится компилятором, пока jar не извлечён вручную
+    // и не подключён как обычная deobf-зависимость.
+    implementation fg.deobf("thermal:thermal_core:1.19.2-10.3.0.9")
+
     // Примечание: отдельного cofh_lib jar'а у вас нет — начиная с этой версии
     // он объединён внутрь cofh_core, поэтому отдельно подключать не нужно.
 }

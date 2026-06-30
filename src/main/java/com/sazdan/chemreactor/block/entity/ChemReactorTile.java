@@ -77,7 +77,7 @@ public class ChemReactorTile extends MachineBlockEntity {
     // просто правый клик пока не откроет интерфейс.
     @Nullable
     @Override
-    public AbstractContainerMenu m_7208_(int containerId, Inventory playerInv, Player player) {
+    public AbstractContainerMenu createMenu(int containerId, Inventory playerInv, Player player) {
         return null;
     }
 }

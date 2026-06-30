@@ -32,7 +32,7 @@ public class ChemReactorBlock extends Block implements EntityBlock {
     // DirectionProperty ограниченный 4 горизонтальными направлениями (север/юг/восток/запад).
     // Машины Thermal не смотрят вверх/вниз — это соответствует тому, что мы видели
     // в Reconfigurable4WayBlockEntity (FACING_HORIZONTAL), от которого наследуется наш Tile.
-    public static final DirectionProperty FACING = net.minecraft.world.level.block.state.properties.BlockStateProperties.f_61374_; // HORIZONTAL_FACING
+    public static final DirectionProperty FACING = net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING;
 
     public ChemReactorBlock() {
         super(
@@ -42,24 +42,24 @@ public class ChemReactorBlock extends Block implements EntityBlock {
                         .requiresCorrectToolForDrops()
         );
         // Задаём состояние по умолчанию — фронт смотрит на север, пока игрок не установит блок.
-        this.m_49959_((BlockState)this.f_49792_.m_61090_().m_61124_(FACING, Direction.NORTH));
+        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
     }
 
     // Регистрируем свойство FACING в "таблице состояний" блока — без этого
     // вызова Forge не будет знать, что у блока вообще есть направление,
     // и blockstate-файл не сможет на него ссылаться через variants.
     @Override
-    protected void m_7926_(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.m_61104_(new net.minecraft.world.level.block.state.properties.Property[]{FACING});
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(FACING);
     }
 
     // Вызывается при установке блока игроком. Здесь мы вычисляем направление:
-    // m_61350_() возвращает направление, противоположное взгляду игрока —
+    // getHorizontalDirection() возвращает направление, противоположное взгляду игрока —
     // то есть фронт блока "смотрит на" игрока, который его ставит.
     @Nullable
     @Override
-    public BlockState m_5573_(BlockPlaceContext context) {
-        return (BlockState)this.m_49966_().m_61124_(FACING, context.m_8125_().m_122424_());
+    public BlockState getStateForPlacement(BlockPlaceContext context) {
+        return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
     }
 
     // --- Связь блока с BlockEntity ---
@@ -67,7 +67,7 @@ public class ChemReactorBlock extends Block implements EntityBlock {
     // при установке блока, чтобы создать соответствующий Tile.
     @Nullable
     @Override
-    public BlockEntity m_142194_(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new ChemReactorTile(pos, state);
     }
 
@@ -76,9 +76,9 @@ public class ChemReactorBlock extends Block implements EntityBlock {
     // но никогда не будет "тикать" — то есть никогда не начнёт обработку.
     @Nullable
     @Override
-    public <T extends BlockEntity> BlockEntityTicker<T> m_142354_(Level level, BlockState state, BlockEntityType<T> type) {
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
         // Тикаем только на сервере (логика обработки не должна выполняться на клиенте).
-        if (level.f_46443_) {
+        if (level.isClientSide) {
             return null;
         }
         return type == ChemReactorBlockEntities.CHEMICAL_REACTOR.get()
