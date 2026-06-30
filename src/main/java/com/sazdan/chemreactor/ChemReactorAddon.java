@@ -1,5 +1,6 @@
 package com.sazdan.chemreactor;
 
+import com.sazdan.chemreactor.init.ChemReactorBlockEntities;
 import com.sazdan.chemreactor.init.ChemReactorBlocks;
 import com.sazdan.chemreactor.init.ChemReactorItems;
 import net.minecraftforge.fml.common.Mod;
@@ -27,5 +28,6 @@ public class ChemReactorAddon {
         // и зарегистрировать наш блок и предмет при старте игры.
         ChemReactorBlocks.BLOCKS.register(modEventBus);
         ChemReactorItems.ITEMS.register(modEventBus);
+        ChemReactorBlockEntities.BLOCK_ENTITIES.register(modEventBus);
     }
 }
