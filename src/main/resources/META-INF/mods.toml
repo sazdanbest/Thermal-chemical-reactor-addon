@@ -1,0 +1,73 @@
+issueTrackerURL = "https://github.com/sazdan/thermal_addon_chemreactor"
+
+# ===========================================================
+# mods.toml — "паспорт" мода. Forge читает этот файл при старте
+# игры, чтобы узнать: как называется мод, кто автор, какая версия,
+# и от каких других модов он зависит (и в каком порядке грузиться).
+# ===========================================================
+
+modLoader = "javafml"          # стандартный загрузчик для Java-модов на Forge
+loaderVersion = "[43,)"        # совместим с Forge 43.x и новее
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "thermal_addon_chemreactor"   # как договаривались — Mod ID
+version = "${mod_version}"            # подставится автоматически из build.gradle (1.0.0)
+displayName = "Chemical Reactor (Thermal Addon)"
+authors = "sazdan"
+description = '''
+Аддон для Thermal Expansion, добавляющий механизм "Химический реактор" (Chemical Reactor),
+полностью интегрированный в систему RF-энергии, аугментов и редстоун-управления Thermal.
+'''
+
+# --- Зависимость от самого Forge ---
+[[dependencies.thermal_addon_chemreactor]]
+modId = "forge"
+mandatory = true
+versionRange = "[43,)"
+ordering = "NONE"
+side = "BOTH"
+
+# --- Зависимость от Minecraft ---
+[[dependencies.thermal_addon_chemreactor]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.19.2,1.20)"
+ordering = "NONE"
+side = "BOTH"
+
+# --- Зависимость от CoFH Core (база, от которой наследуется наш Tile) ---
+[[dependencies.thermal_addon_chemreactor]]
+modId = "cofh_core"
+mandatory = true
+versionRange = "[10.3.1,)"
+ordering = "AFTER"   # наш мод должен грузиться ПОСЛЕ cofh_core
+side = "BOTH"
+
+# --- Зависимость от Thermal (Thermal Core) ---
+# Это modId самого "ядра" Thermal Series (thermal_core.jar), который физически
+# спрятан внутри thermal_foundation.jar как jarjar-вложение. Именно отсюда
+# берутся базовые классы машин (MachineBlockEntity и т.п.), поэтому
+# зависимость обязательна — без неё Forge ругается "has mods that were not found".
+[[dependencies.thermal_addon_chemreactor]]
+modId = "thermal"
+mandatory = true
+versionRange = "[10.3.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# --- Зависимость от Thermal Foundation (общие ресурсы Thermal: жидкости, предметы) ---
+[[dependencies.thermal_addon_chemreactor]]
+modId = "thermal_foundation"
+mandatory = true
+versionRange = "[10.3.1,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# --- Зависимость от Thermal Expansion (откуда мы берём базовый класс машины) ---
+[[dependencies.thermal_addon_chemreactor]]
+modId = "thermal_expansion"
+mandatory = true
+versionRange = "[10.3.1,)"
+ordering = "AFTER"
+side = "BOTH"

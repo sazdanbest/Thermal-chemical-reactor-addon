@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "thermal_addon_chemreactor:block/chemical_reactor" }
+  }
+}

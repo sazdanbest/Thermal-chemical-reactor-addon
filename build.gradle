@@ -1,0 +1,120 @@
+// ===========================================================
+// build.gradle — конфигурация сборки нашего аддона
+// ===========================================================
+// Этот файл говорит Gradle (системе сборки), какую версию Minecraft/Forge
+// использовать, откуда брать зависимости (включая наши jar'ы из libs/),
+// и как называется итоговый jar мода.
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '5.1.+'
+}
+
+// --- Базовые параметры мода. Меняются один раз, используются ниже. ---
+version = '1.0.0'
+group = 'com.sazdan.chemreactor' // ваш maven-package, как договаривались
+archivesBaseName = 'thermal_addon_chemreactor'
+
+// Используем Java 17, как требует Forge 43.3.5 / Minecraft 1.19.2
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+println('Java: ' + System.getProperty('java.version') + ' JVM: ' + System.getProperty('java.vm.version') + '(' + System.getProperty('java.vendor') + ') Arch: ' + System.getProperty('os.arch'))
+
+minecraft {
+    // Версия маппингов имён методов/полей (человекочитаемые имена вместо обфусцированных).
+    // 'official' — маппинги от Mojang, стандарт для 1.19.2.
+    mappings channel: 'official', version: '1.19.2'
+
+    // Описываем два запуска: клиент и сервер, для тестирования через runClient/runServer в IntelliJ
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                thermal_addon_chemreactor {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                thermal_addon_chemreactor {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+// --- Откуда брать зависимости ---
+repositories {
+    mavenCentral()
+    // Локальная папка libs/ — здесь лежат jar'ы Thermal/CoFH.
+    // flatDir ищет файлы по схеме "name-version.jar". Поэтому ниже
+    // важно правильно разбить имя файла на name и version.
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    // Сам Forge — обязательная зависимость, версия должна совпадать с сервером (43.3.5)
+    minecraft 'net.minecraftforge:forge:1.19.2-43.3.5'
+
+    // --- Зависимости Thermal/CoFH из папки libs/ ---
+    // Файл называется cofh_core-1.19.2-10.3.1.48.jar
+    // flatDir ожидает разбиение "name-version.jar", поэтому:
+    //   name    = cofh_core
+    //   version = 1.19.2-10.3.1.48
+    // Координата без group: ":name:version" (двоеточие в начале — group пустой)
+    implementation fg.deobf("thermal:cofh_core:1.19.2-10.3.1.48")
+    implementation fg.deobf("thermal:thermal_foundation:1.19.2-10.3.1.57")
+    implementation fg.deobf("thermal:thermal_expansion:1.19.2-10.3.1.25")
+
+    // Примечание: отдельного cofh_lib jar'а у вас нет — начиная с этой версии
+    // он объединён внутрь cofh_core, поэтому отдельно подключать не нужно.
+}
+
+// Указываем кодировку исходников — иначе кириллица в комментариях/lang-файлах
+// может поломаться на некоторых системах (особенно Windows с другой локалью).
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Подставляем номер версии мода и т.п. в resources (используется в mods.toml через ${file.jarVersion})
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: '1.19.2',
+            forge_version    : '43.3.5',
+            mod_version      : project.version
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching('META-INF/mods.toml') {
+        expand replaceProperties + [project: project]
+    }
+}
+
+// Манифест jar'а — техническая информация, не обязательна для работы мода,
+// но полезна для отладки (видно версию Forge, под которую собран мод).
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'   : 'thermal_addon_chemreactor',
+                'Specification-Vendor'  : 'sazdan',
+                'Specification-Version' : '1',
+                'Implementation-Title'  : project.name,
+                'Implementation-Version': project.jar.archiveVersion,
+                'Implementation-Vendor' : 'sazdan'
+        ])
+    }
+}

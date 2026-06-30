@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "thermal_addon_chemreactor:block/chemical_reactor_top",
+    "bottom": "thermal_addon_chemreactor:block/chemical_reactor_bottom",
+    "side": "thermal_addon_chemreactor:block/chemical_reactor_side"
+  }
+}
