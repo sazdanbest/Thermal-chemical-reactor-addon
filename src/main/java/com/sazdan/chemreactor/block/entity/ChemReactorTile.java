@@ -5,6 +5,8 @@ import cofh.lib.fluid.FluidStorageCoFH;
 import cofh.lib.inventory.ItemStorageCoFH;
 import cofh.thermal.lib.block.entity.MachineBlockEntity;
 import com.sazdan.chemreactor.init.ChemReactorBlockEntities;
+import com.sazdan.chemreactor.inventory.ChemReactorContainer;
+import com.sazdan.chemreactor.recipe.ChemReactorRecipeManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -21,9 +23,6 @@ import javax.annotation.Nullable;
 //   - редстоун-контроль (можно настроить реакцию на сигнал редстоуна)
 //   - конфигурацию сторон блока (вход/выход для авто-извлечения предметов трубами и т.п.)
 //
-// На ЭТОМ шаге (3) мы НЕ подключаем рецепты (cacheRecipe() возвращает false по
-// умолчанию из родителя — машина физически не сможет начать обработку,
-// но Tile уже полностью функционален с точки зрения хранения предметов/жидкостей/энергии).
 public class ChemReactorTile extends MachineBlockEntity {
 
     public ChemReactorTile(BlockPos pos, BlockState state) {
@@ -62,22 +61,34 @@ public class ChemReactorTile extends MachineBlockEntity {
         return 800;
     }
 
+    // --- Подключение рецептов ---
+    // cacheRecipe() ищет подходящий рецепт через ChemReactorRecipeManager и заполняет
+    // itemInputCounts/fluidInputCounts — это единственное, что нужно переопределить:
+    // validateInputs()/validateOutputs()/processStart()/processFinish() в MachineBlockEntity
+    // уже реализованы универсально (по числу слотов/баков), как и у MachineBottlerTile —
+    // у нас тоже выход только предметами, без выходной жидкости.
+    @Override
+    protected boolean cacheRecipe() {
+        this.curRecipe = ChemReactorRecipeManager.instance().getRecipe(this);
+        if (this.curRecipe != null) {
+            this.itemInputCounts = this.curRecipe.getInputItemCounts(this);
+            this.fluidInputCounts = this.curRecipe.getInputFluidCounts(this);
+        }
+        return this.curRecipe != null;
+    }
+
     // Хранилище опыта пока не используем (XP не выдаётся этой машиной) —
     // оставляем дефолтное значение родителя.
     // (getBaseXpStorage() не переопределяем, родитель даст 2500 по умолчанию,
     // но т.к. xpStorageFeature отключен по конфигу, на практике это не используется)
 
-    // --- Временная заглушка для MenuProvider ---
     // AugmentableBlockEntity (предок по иерархии) реализует интерфейс MenuProvider
     // целиком, включая getDisplayName() — переопределять его нам не нужно.
-    // Но createMenu() в родителе abstract/не задан содержательно для машины без
-    // GUI, поэтому переопределяем именно его. GUI появится на шаге 5-6 — пока
-    // возвращаем null, что означает "у тайла нет открываемого меню". Блок при
-    // этом полностью работает физически (хранит предметы/жидкости/энергию),
-    // просто правый клик пока не откроет интерфейс.
+    // createMenu() — единственное, что нужно задать: какой Container открывать.
+    // Сам вызов происходит из ChemReactorBlock.use() через NetworkHooks.openScreen(...).
     @Nullable
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory playerInv, Player player) {
-        return null;
+        return new ChemReactorContainer(containerId, this.level, this.worldPosition, playerInv, player);
     }
 }

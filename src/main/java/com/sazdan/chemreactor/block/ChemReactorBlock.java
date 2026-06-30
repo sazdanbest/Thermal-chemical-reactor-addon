@@ -4,6 +4,11 @@ import com.sazdan.chemreactor.block.entity.ChemReactorTile;
 import com.sazdan.chemreactor.init.ChemReactorBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -18,6 +23,8 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.material.Material;
 import net.minecraft.world.level.material.MaterialColor;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraftforge.network.NetworkHooks;
 import org.jetbrains.annotations.Nullable;
 
 // ChemReactorBlock — физическая оболочка блока в мире.
@@ -84,6 +91,22 @@ public class ChemReactorBlock extends Block implements EntityBlock {
         return type == ChemReactorBlockEntities.CHEMICAL_REACTOR.get()
                 ? (lvl, pos, st, blockEntity) -> ((ChemReactorTile) blockEntity).tickServer()
                 : null;
+    }
+
+    // Открытие интерфейса по правому клику. ChemReactorTile реализует MenuProvider
+    // (через AugmentableBlockEntity) и уже умеет создавать ChemReactorContainer
+    // в createMenu() — здесь только просим Forge открыть это меню у конкретного игрока.
+    // NetworkHooks.openScreen(player, menuProvider, pos) сам допишет BlockPos в пакет,
+    // который ChemReactorMenus читает на клиенте через data.readBlockPos().
+    @Override
+    public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
+        if (!level.isClientSide) {
+            BlockEntity blockEntity = level.getBlockEntity(pos);
+            if (blockEntity instanceof MenuProvider menuProvider) {
+                NetworkHooks.openScreen((ServerPlayer) player, menuProvider, pos);
+            }
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
     }
 }
 

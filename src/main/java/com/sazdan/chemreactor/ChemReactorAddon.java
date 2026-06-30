@@ -1,10 +1,18 @@
 package com.sazdan.chemreactor;
 
+import cofh.thermal.lib.common.ThermalRecipeManagers;
+import com.sazdan.chemreactor.client.ChemReactorScreen;
 import com.sazdan.chemreactor.init.ChemReactorBlockEntities;
 import com.sazdan.chemreactor.init.ChemReactorBlocks;
 import com.sazdan.chemreactor.init.ChemReactorItems;
+import com.sazdan.chemreactor.init.ChemReactorMenus;
+import com.sazdan.chemreactor.init.ChemReactorRecipeSerializers;
+import com.sazdan.chemreactor.init.ChemReactorRecipeTypes;
+import com.sazdan.chemreactor.recipe.ChemReactorRecipeManager;
+import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 // Аннотация @Mod — это то, что Forge ищет при сканировании jar'а, чтобы понять
@@ -29,5 +37,22 @@ public class ChemReactorAddon {
         ChemReactorBlocks.BLOCKS.register(modEventBus);
         ChemReactorItems.ITEMS.register(modEventBus);
         ChemReactorBlockEntities.BLOCK_ENTITIES.register(modEventBus);
+        ChemReactorRecipeTypes.RECIPE_TYPES.register(modEventBus);
+        ChemReactorRecipeSerializers.RECIPE_SERIALIZERS.register(modEventBus);
+        ChemReactorMenus.MENUS.register(modEventBus);
+
+        // Подключаем наш менеджер рецептов к общей системе Thermal: Forge сам вызовет
+        // ChemReactorRecipeManager.refresh(...) при каждой (пере)загрузке рецептов —
+        // ровно так же, как это происходит для BrewerRecipeManager и остальных машин Thermal.
+        ThermalRecipeManagers.registerManager(ChemReactorRecipeManager.instance());
+
+        modEventBus.addListener(this::clientSetup);
+    }
+
+    // FMLClientSetupEvent гарантированно вызывается только на клиенте — поэтому здесь,
+    // а не в конструкторе, безопасно ссылаться на клиентские классы (Screen, MenuScreens)
+    // без риска уронить выделенный сервер, у которого их нет на classpath.
+    private void clientSetup(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> MenuScreens.register(ChemReactorMenus.CHEM_REACTOR.get(), ChemReactorScreen::new));
     }
 }

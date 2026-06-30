@@ -90,6 +90,15 @@ dependencies {
 
     // Примечание: отдельного cofh_lib jar'а у вас нет — начиная с этой версии
     // он объединён внутрь cofh_core, поэтому отдельно подключать не нужно.
+
+    // --- Industrial Foregoing + Titanium (используются в первом тестовом рецепте) ---
+    // Раньше лежали как обычные jar'ы в run/mods/ — это ломало runClient: релизные jar'ы
+    // содержат "сырые" SRG-имена методов/полей (так публикуются все Forge-моды), а наша
+    // dev-среда работает с official-маппингами. Без деобфускации это падает с
+    // NoSuchMethodError/NoSuchFieldError ещё на этапе загрузки модов. Через fg.deobf
+    // jar проходит ту же деобфускацию, что и cofh_core/thermal_*, и грузится нормально.
+    implementation fg.deobf("industrialforegoing:industrial-foregoing:1.19.2-3.3.2.3-5")
+    implementation fg.deobf("titanium:titanium:1.19.2-3.7.4-31")
 }
 
 // Указываем кодировку исходников — иначе кириллица в комментариях/lang-файлах

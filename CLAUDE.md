@@ -7,8 +7,11 @@
 Я не опытен в Java/разработке через нейросети. Объясняй код понятно, шаг за шагом.
 
 **Формат работы:** генерируй код файл за файлом, по одному значимому шагу за раз.
-После каждого этапа — проверка через `runClient` (запуск Minecraft из IntelliJ) перед тем как двигаться дальше.
 Не выдавай весь проект целиком сразу.
+
+**Запуск `runClient`:** перед каждым запуском `runClient` сначала спроси меня в чате текстом,
+можно ли его запускать. Запускай только после того, как я отвечу "да". Сам, без вопроса,
+`runClient` не запускай — даже если код только что собрался без ошибок.
 
 ## О проекте
 
@@ -45,6 +48,10 @@ RF-энергия, аугменты, конфигурация сторон (вх
 - `thermal_expansion-1.19.2-10.3.1.25.jar`
 - `thermal_core-1.19.2-10.3.0.9.jar` — **извлечён вручную** из
   `META-INF/jarjar/thermal_core-1.19.2-10.3.0.9.jar` внутри `thermal_foundation.jar` (см. ниже).
+- `industrial-foregoing-1.19.2-3.3.2.3-5.jar`, `titanium-1.19.2-3.7.4-31.jar` — нужны для первого
+  тестового рецепта (`industrialforegoing:latex`/`dryrubber`). **Важно: не клади release-моды
+  в `run/mods/` напрямую** — см. "Грабли: моды в run/mods падают с NoSuchMethodError" ниже,
+  только через `fg.deobf` в `libs/`, как остальные.
 
 **Важная особенность build.gradle:** в ForgeGradle 5 через `flatDir` координаты deobf-зависимости
 обязательно должны быть явно разделены на группу/имя/версию. Пустая группа ломает резолвер.
@@ -59,8 +66,23 @@ dependencies {
     implementation fg.deobf("thermal:thermal_foundation:1.19.2-10.3.1.57")
     implementation fg.deobf("thermal:thermal_expansion:1.19.2-10.3.1.25")
     implementation fg.deobf("thermal:thermal_core:1.19.2-10.3.0.9")
+    implementation fg.deobf("industrialforegoing:industrial-foregoing:1.19.2-3.3.2.3-5")
+    implementation fg.deobf("titanium:titanium:1.19.2-3.7.4-31")
 }
 ```
+
+**Грабли: моды в `run/mods/` падают с NoSuchMethodError/NoSuchFieldError.** Сначала Industrial
+Foregoing и Titanium были просто положены как обычные jar'ы в `run/mods/` — игра падала при
+загрузке модов: `NoSuchMethodError: DyeColor.m_41060_()` (Industrial Foregoing) и
+`NoSuchFieldError: f_42799_` (Titanium, в их собственном debug-классе
+`_impl.test.recipe.TestSerializableRecipe`). Причина: релизные jar'ы любых Forge-модов содержат
+"сырые" SRG-имена методов/полей (так компилируются все моды), а наша dev-среда (`runClient` с
+official-маппингами) их не понимает — в продакшене Forge сам ремапит SRG на лету, а тут такого
+шага для содержимого `run/mods/` нет. Признак в краш-репорте: у успешно загруженных модов в имени
+jar добавлен суффикс `_mapped_official_1.19.2` (это и есть прошедшие деобфускацию через `fg.deobf`
+файлы из `libs/`), а у упавших — нет. **Решение — то же самое, что мы уже делаем для cofh_core и
+thermal_*: класть jar в `libs/` и подключать через `fg.deobf`, а не в `run/mods/`.** После этого
+оба мода грузятся нормально.
 
 **jarjar-ловушка (решено, см. "Текущий статус"):** `thermal_core` зашит внутрь `thermal_foundation.jar`
 как jarjar-вложение. Forge разворачивает такие вложения только во время игры (рантайм-loader),
@@ -113,8 +135,73 @@ Chemical Reactor — расширенная версия этой схемы.
 ### Классы проекта
 
 - `ChemReactorBlock` — наследует `Block`, реализует `EntityBlock`. Свойство `BlockStateProperties.HORIZONTAL_FACING`.
-- `ChemReactorTile` — наследует `MachineBlockEntity` (CoFH).
-- Регистрация: `ChemReactorBlocks`, `ChemReactorItems`, `ChemReactorBlockEntities`.
+  Также переопределяет `use()` — открывает GUI через `NetworkHooks.openScreen(...)` (см. ниже).
+- `ChemReactorTile` — наследует `MachineBlockEntity` (CoFH). Переопределяет только `getBaseProcessTick()`
+  (фиксировано 800 тиков, не зависит от менеджера рецептов) и `cacheRecipe()` (ищет рецепт через
+  `ChemReactorRecipeManager`). `validateInputs()`/`validateOutputs()`/`processStart()`/`processFinish()`
+  НЕ переопределяются — у `MachineBlockEntity` уже есть универсальная реализация по числу слотов/баков
+  (проверено на примере `MachineBottlerTile`, у которой тоже выход только предметом).
+- Регистрация: `ChemReactorBlocks`, `ChemReactorItems`, `ChemReactorBlockEntities`,
+  `ChemReactorRecipeTypes`, `ChemReactorRecipeSerializers`, `ChemReactorMenus`.
+
+### Рецепты (шаг 4, готово)
+
+- `recipe/ChemReactorRecipe.java` — `extends cofh.thermal.lib.util.recipes.ThermalRecipe` (как `BrewerRecipe`
+  у Thermal), только данные рецепта (вход/выход/энергия), без логики.
+- `init/ChemReactorRecipeTypes.java` / `init/ChemReactorRecipeSerializers.java` — регистрация `RecipeType`/
+  `RecipeSerializer` через готовые классы CoFH (`cofh.lib.util.recipes.SerializableRecipeType`,
+  `cofh.thermal.lib.util.recipes.MachineRecipeSerializer`) — свой JSON-парсер писать не пришлось,
+  `MachineRecipeSerializer` уже умеет читать смешанный список `"ingredients"` (предметы + жидкости вперемешку).
+- `recipe/ChemReactorRecipeManager.java` — синглтон-менеджер (по образцу `BottlerRecipeManager`/
+  `PressRecipeManager` из Thermal), ищет рецепт по содержимому 2 предметных слотов + 2 баков.
+  **Важно: совпадение позиционное**, как и у самих машин Thermal с несколькими входами (см.
+  `PressRecipeManager`, слот "die" = индекс 1) — НЕ по множеству/любой комбинации. Для текущего
+  рецепта это значит: `sulfur_dust` должен лежать в предметном слоте 0 (слот 1 не используется),
+  `latex` — в баке 0, `light_oil` — в баке 1 (порядок = порядок объявления в JSON `"ingredients"`).
+  Если переставить жидкости местами по бакам — рецепт не найдётся. При добавлении новых рецептов
+  с другим набором входов это стоит держать в голове.
+- Подключение к Thermal: `ThermalRecipeManagers.registerManager(ChemReactorRecipeManager.instance())`
+  в конструкторе `ChemReactorAddon` — публичный API CoFH специально для аддонов, Thermal сам вызывает
+  `refresh()` у всех зарегистрированных менеджеров при (пере)загрузке рецептов.
+- **Грабли:** `RecipeManager.byType(RecipeType)` в official-маппингах **private** (можно проверить по
+  `forge-...-sources.jar` из кэша Gradle) — внешний код вызвать его не может. Используем публичный
+  аналог `recipeManager.getAllRecipesFor(RecipeType)` (возвращает `List<T>` вместо `Map`), без
+  access-transformer'а.
+- JSON-рецепт: `data/thermal_addon_chemreactor/recipes/chem_reactor/dryrubber.json`.
+
+### GUI (шаги 5-6, готово, но без своих текстур)
+
+- `inventory/ChemReactorContainer.java` — `extends cofh.core.inventory.container.TileCoFHContainer`
+  (НЕ голый `AbstractContainerMenu`) — это даёт бесплатно `quickMoveStack` (шифт-клик) и `stillValid`
+  (закрытие при разрушении блока/уходе игрока), писать их с нуля не пришлось. 4 предметных слота
+  (`SlotCoFH` + `InvWrapperCoFH` вокруг `tile.getItemInv()`) + стандартный инвентарь игрока через
+  `bindPlayerInventory()`. Аугмент-слоты НЕ добавлены — `ChemReactorTile` пока не вызывает
+  `addAugmentSlots(...)` в конструкторе (см. "Известные пробелы" ниже).
+- `init/ChemReactorMenus.java` — регистрация `MenuType` через `IForgeMenuType.create(...)`,
+  клиентская фабрика берёт `Level`/`Player` через `cofh.core.util.ProxyUtils.getClientWorld()/
+  getClientPlayer()` (тот же приём, что и у `TExpContainers` в самом Thermal).
+- `client/ChemReactorScreen.java` — `extends AbstractContainerScreen<ChemReactorContainer>` (ванильный,
+  НЕ `cofh.thermal.lib.client.gui.MachineScreen` — тот требует кастомную PNG-текстуру панели, которой
+  у нас пока нет). Фон/баки/прогресс рисуются примитивами через `fill()`, а не `blit()` готовой
+  картинки. Баки красятся настоящим тинтом жидкости через `IClientFluidTypeExtensions`.
+  Зарегистрирован в `ChemReactorAddon` через `FMLClientSetupEvent` + `MenuScreens.register(...)`
+  (НЕ `RegisterMenuScreensEvent` — этот класс появился только в Forge для MC 1.20+, в 1.19.2 его нет).
+- **Критичная деталь, без которой GUI физически не открывался бы даже с правильным `createMenu()`:**
+  нужно было добавить `ChemReactorBlock.use(...)`, вызывающий
+  `NetworkHooks.openScreen((ServerPlayer) player, menuProvider, pos)`. Без этого override клик по
+  блоку вообще ничего не делает — `createMenu()` у тайла никто не вызывает.
+- Проверено в игре: интерфейс открывается по правому клику.
+
+**Известные пробелы (сознательно отложено, не баг):**
+- Аугмент-слоты не добавлены ни в тайл, ни в GUI (`addAugmentSlots`/`bindAugmentSlots` не вызываются) —
+  хотя по спецификации полная поддержка аугментов заявлена "из коробки". Нужно отдельно: вызвать
+  `this.addAugmentSlots(ThermalCoreConfig.machineAugments)` в конструкторе `ChemReactorTile` и
+  `bindAugmentSlots(tileInv, 4, tile.augSize())` в контейнере + позиционирование слотов на экране.
+- Charge-слот (зарядка энергией через предмет) не добавлен в `inventory` тайла — Brewer/Bottler его
+  добавляют (`this.inventory.addSlot(this.chargeSlot, StorageGroup.INTERNAL)`), мы — нет.
+- Своих текстур для GUI (фон, баки, прогресс) нет — экран рисуется примитивами (`fill()`), не PNG.
+  Когда появится арт (см. "Ресурсы и текстуры"), `ChemReactorScreen` нужно переписать под `blit()`.
+- Полоска энергии (RF) на экране не отображается.
 
 ## Спецификация механизма "Chemical Reactor"
 
@@ -157,8 +244,18 @@ Chemical Reactor — расширенная версия этой схемы.
 - Блок поворачивается к игроку при установке
 - **Шаг 3 (BlockEntity) сделан и проверен в игре:** `ChemReactorTile extends MachineBlockEntity` компилируется
   и работает — блок ставится, поворачивается к игроку, создаёт тайл, тикает на сервере, слоты
-  (2 input/2 output) и баки (2×4000 mB input, 1×8000 mB output) настроены. GUI пока не открывается
-  (`createMenu` возвращает `null`) — это ожидаемо, экран будет на шаге 6. Крашей нет.
+  (2 input/2 output) и баки (2×4000 mB input, 1×8000 mB output) настроены. Крашей нет.
+- **Шаг 4 (рецепты) сделан** — `ChemReactorRecipe`/`ChemReactorRecipeManager`/`ChemReactorRecipeTypes`/
+  `ChemReactorRecipeSerializers` + тестовый JSON-рецепт dryrubber. Подробности и грабли — см.
+  "Рецепты (шаг 4, готово)" выше. Не проверено в игре отдельно (рецепт зависит от Industrial
+  Foregoing — latex/dryrubber; сама загрузка/компиляция рецепта проверена, полный цикл обработки
+  с реальными предметами в инвентаре — ещё нет).
+- **Шаги 5-6 (Container + Screen) сделаны и проверены в игре:** интерфейс открывается по правому
+  клику, без своей текстуры (примитивы вместо PNG). Подробности и осознанные пробелы (аугменты,
+  charge-слот, полоска энергии) — см. "GUI (шаги 5-6, готово, но без своих текстур)" выше.
+- **Industrial Foregoing + Titanium подключены и работают** как deobf-зависимости в `libs/`
+  (изначально лежали как обычные jar'ы в `run/mods/` и крашились — см. "Грабли: моды в run/mods..."
+  в разделе "Зависимости").
 
 **🟢 Блокер шага 3 решён.** Было два независимых наслаивающихся бага:
 
@@ -183,10 +280,24 @@ Chemical Reactor — расширенная версия этой схемы.
 1. ✅ Настройка проекта — build.gradle, mods.toml, зависимости в libs/
 2. ✅ Регистрация блока и предмета
 3. ✅ BlockEntity (Tile) — `MachineBlockEntity` резолвится, компилируется, проверено в игре
-4. ⬜ Система рецептов — тип `chemreactor`, сериализатор, менеджер, первый рецепт
-   (проверку в игре после этого шага, как и после всех остальных, разработчик всегда делает сам —
-   не запускай `runClient` самостоятельно, просто сообщай, что готово к проверке)
-5. ⬜ Container — слоты и баки для GUI
-6. ⬜ Screen (GUI) — прогресс-бар, баки
-7. ⬜ Assets — blockstate, модели блока/предмета, lang (en_us, ru_ru), текстуры
+4. ✅ Система рецептов — тип `chem_reactor`, сериализатор, менеджер, тестовый рецепт dryrubber
+5. ✅ Container — слоты и баки для GUI (`ChemReactorContainer`, без аугмент-слотов)
+6. ✅ Screen (GUI) — открывается в игре; фон/баки/прогресс примитивами, без своих текстур
+7. ⬜ Assets — blockstate, модели блока/предмета, lang (en_us, ru_ru) уже есть (см. "Ресурсы и
+   текстуры"); **не хватает**: текстур самого GUI (фон/баки/прогресс — сейчас заглушка из `fill()`)
 8. ⬜ Сборка и тест — Gradle build, jar в модпак, проверка в игре
+
+**Дальше имеет смысл (не пронумеровано строго, на усмотрение):**
+- Проверить полный цикл обработки тестового рецепта в игре (нужны fluid-баки с latex/light_oil
+  и sulfur_dust в предметных слотах — позиционно, см. "Рецепты" выше).
+- Аугмент-слоты: добавить `addAugmentSlots(...)` в `ChemReactorTile` + `bindAugmentSlots(...)` в
+  `ChemReactorContainer` + позиционирование в `ChemReactorScreen` (сейчас полностью отсутствуют).
+- Charge-слот (зарядка аугментов/энергии предметом) — не добавлен в инвентарь тайла.
+- Своя текстура GUI (фон/баки/прогресс/энергия) — после готовности арта переписать
+  `ChemReactorScreen` под `blit()` вместо `fill()`.
+- Полоска энергии (RF) на экране.
+- (После 8) — упаковать jar и закинуть в реальный модпак на сервере (Forge 43.3.5).
+
+**Перед очисткой/компактификацией сессии:** весь контекст по сделанному за эту сессию (jarjar/SRG
+фикс, рецепты, GUI, IF/Titanium фикс) уже перенесён сюда максимально подробно — этот файл должен
+быть единственным источником правды, восстанавливать ничего из истории чата не нужно.
