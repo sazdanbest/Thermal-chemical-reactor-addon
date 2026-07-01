@@ -2,11 +2,12 @@
   "type": "thermal_addon_chemreactor:chem_reactor",
   "ingredients": [
     { "fluid": "industrialforegoing:latex", "amount": 500 },
-    { "fluid": "thermal:light_oil", "amount": 500 },
+    { "fluid": "thermal:light_oil", "amount": 100 },
     { "item": "thermal:sulfur_dust" }
   ],
   "result": [
-    { "item": "industrialforegoing:dryrubber" }
+    { "item": "industrialforegoing:dryrubber" },
+    { "fluid": "industrialforegoing:sludge", "amount": 100 }
   ],
   "energy": 4000
 }
