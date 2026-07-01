@@ -108,8 +108,9 @@ public class ChemReactorTile extends MachineBlockEntity {
     // cacheRecipe() ищет подходящий рецепт через ChemReactorRecipeManager и заполняет
     // itemInputCounts/fluidInputCounts — это единственное, что нужно переопределить:
     // validateInputs()/validateOutputs()/processStart()/processFinish() в MachineBlockEntity
-    // уже реализованы универсально (по числу слотов/баков), как и у MachineBottlerTile —
-    // у нас тоже выход только предметами, без выходной жидкости.
+    // уже реализованы универсально (по числу слотов/баков) и сами умеют писать как в выходные
+    // предметные слоты, так и в выходной бак (у нас, в отличие от MachineBottlerTile, есть и то,
+    // и другое) — переопределять их отдельно под жидкий выход не требуется.
     @Override
     protected boolean cacheRecipe() {
         this.curRecipe = ChemReactorRecipeManager.instance().getRecipe(this);

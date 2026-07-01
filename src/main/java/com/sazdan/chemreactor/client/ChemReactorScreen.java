@@ -32,26 +32,32 @@ import net.minecraft.world.entity.player.Inventory;
 // мы не используем).
 public class ChemReactorScreen extends ContainerScreenCoFH<ChemReactorContainer> {
 
-    private static final ResourceLocation TEXTURE_BACKGROUND =
+    // Координаты и спрайты ниже — public, т.к. на них же (без дублирования магических чисел)
+    // ссылается ChemReactorRecipeCategory (см. client/compat/jei/) при отрисовке рецепта в JEI —
+    // страница JEI переиспользует ровно ту же раскладку и тот же файл jei_handler.png, что и
+    // настоящий экран машины.
+    public static final ResourceLocation TEXTURE_BACKGROUND =
             new ResourceLocation("thermal_addon_chemreactor", "textures/gui/container/chemical_reactor.png");
-    private static final ResourceLocation TEXTURE_WIDGETS =
+    public static final ResourceLocation TEXTURE_WIDGETS =
             new ResourceLocation("thermal", "textures/gui/jei_handler.png");
 
     // Спрайты внутри jei_handler.png.
-    private static final int SPRITE_SLOT_U = 0, SPRITE_SLOT_V = 96, SPRITE_SLOT_SIZE = 18;
-    private static final int SPRITE_PROGRESS_U_OFF = 224, SPRITE_PROGRESS_U_ON = 240;
-    private static final int SPRITE_PROGRESS_V = 16, SPRITE_PROGRESS_W = 16, SPRITE_PROGRESS_H = 17;
+    public static final int SPRITE_SLOT_U = 0, SPRITE_SLOT_V = 96, SPRITE_SLOT_SIZE = 18;
+    public static final int SPRITE_PROGRESS_U_OFF = 224, SPRITE_PROGRESS_U_ON = 240;
+    public static final int SPRITE_PROGRESS_V = 16, SPRITE_PROGRESS_W = 16, SPRITE_PROGRESS_H = 17;
 
     // Позиции на экране (относительно leftPos/topPos) — см. разметку в чате.
-    private static final int TANK_INPUT_0_X = 37, TANK_INPUT_1_X = 57, TANK_Y = 14;
-    private static final int TANK_OUTPUT_X = 140, TANK_OUTPUT_Y = 21;
+    public static final int TANK_INPUT_0_X = 37, TANK_INPUT_1_X = 57, TANK_Y = 14;
+    public static final int TANK_OUTPUT_X = 140, TANK_OUTPUT_Y = 21;
+    public static final int TANK_SMALL_W = 18, TANK_SMALL_H = 34;
+    public static final int TANK_MEDIUM_W = 18, TANK_MEDIUM_H = 42;
 
-    private static final int SLOT_INPUT_0_X = 37, SLOT_INPUT_0_Y = 52;
-    private static final int SLOT_INPUT_1_X = 57, SLOT_INPUT_1_Y = 52;
-    private static final int SLOT_OUTPUT_0_X = 118, SLOT_OUTPUT_0_Y = 21;
-    private static final int SLOT_OUTPUT_1_X = 118, SLOT_OUTPUT_1_Y = 45;
+    public static final int SLOT_INPUT_0_X = 37, SLOT_INPUT_0_Y = 52;
+    public static final int SLOT_INPUT_1_X = 57, SLOT_INPUT_1_Y = 52;
+    public static final int SLOT_OUTPUT_0_X = 118, SLOT_OUTPUT_0_Y = 21;
+    public static final int SLOT_OUTPUT_1_X = 118, SLOT_OUTPUT_1_Y = 45;
 
-    private static final int PROGRESS_X = 89, PROGRESS_Y = 35;
+    public static final int PROGRESS_X = 89, PROGRESS_Y = 35;
 
     // (8,8) — та же позиция RF-полоски, что и у настоящих машин Thermal
     // (cofh.thermal.lib.client.gui.MachineScreen.init(): GuiHelper.createDefaultEnergyStorage(this, 8, 8, ...)).

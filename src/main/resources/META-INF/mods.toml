@@ -71,3 +71,22 @@ mandatory = true
 versionRange = "[10.3.1,)"
 ordering = "AFTER"
 side = "BOTH"
+
+# --- Мягкие (опциональные) зависимости: JEI и KubeJS ---
+# mandatory = false — мод спокойно грузится и работает без них, интеграция (JEI-плагин,
+# KubeJS recipe schema) просто включается, если сам JEI/KubeJS установлен. ordering = AFTER
+# нужен только чтобы наш мод инициализировался после них, если они есть, — на факт загрузки
+# без них не влияет.
+[[dependencies.thermal_addon_chemreactor]]
+modId = "jei"
+mandatory = false
+versionRange = "[11,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.thermal_addon_chemreactor]]
+modId = "kubejs"
+mandatory = false
+versionRange = "[1902.6,)"
+ordering = "AFTER"
+side = "BOTH"
