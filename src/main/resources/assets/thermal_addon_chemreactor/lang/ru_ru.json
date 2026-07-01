@@ -1,4 +1,5 @@
 {
   "block.thermal_addon_chemreactor.chemical_reactor": "Химический реактор",
-  "itemGroup.thermal_addon_chemreactor": "Thermal Addon: Химический реактор"
+  "itemGroup.thermal_addon_chemreactor": "Thermal Addon: Химический реактор",
+  "info.thermal_addon_chemreactor.chemical_reactor.0": "Проводит химические реакции между жидкостями и материалами.\n\nИногда получается даже то, что нужно."
 }

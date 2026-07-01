@@ -15,9 +15,6 @@ import net.minecraft.world.level.Level;
 //   - quickMoveStack (шифт-клик между слотами тайла и инвентарём игрока)
 //   - stillValid (закрытие окна, если игрок отошёл/блок сломан)
 // Поэтому самим писать эту логику с нуля не нужно — как и в MachineBrewerContainer.
-//
-// Аугмент-слоты пока НЕ добавляем — ChemReactorTile их ещё не настраивает
-// (addAugmentSlots не вызывается в конструкторе тайла), это отдельная задача на будущее.
 public class ChemReactorContainer extends TileCoFHContainer {
 
     public final ChemReactorTile tile;
@@ -38,6 +35,18 @@ public class ChemReactorContainer extends TileCoFHContainer {
         this.addSlot(new SlotCoFH(tileInv, 1, 58, 53));
         this.addSlot(new SlotCoFH(tileInv, 2, 119, 22));
         this.addSlot(new SlotCoFH(tileInv, 3, 119, 46));
+
+        // Индекс 4 — charge-слот (добавлен в ChemReactorTile сразу после 4 предметных слотов,
+        // перед баками). Позиция (8,53) — подогнана разработчиком по месту вручную (на 1px левее/
+        // выше, чем изначально) под уже нарисованную иконку на фоне chemical_reactor.png.
+        this.addSlot(new SlotCoFH(tileInv, 4, 8, 53));
+
+        // Аугмент-слоты — индексы 5..(5+augSize()-1): 4 предметных слота (0-3) + charge-слот (4)
+        // добавлены раньше, аугменты по-прежнему последние (см. addAugmentSlots() в ChemReactorTile).
+        // bindAugmentSlots() создаёт SlotCoFH на (0,0) — координаты на экране им проставляет
+        // AugmentPanel/ElementAugmentSlots в ChemReactorScreen (та же выезжающая боковая панель,
+        // что и у настоящих машин Thermal), поэтому здесь ничего вручную не позиционируем.
+        this.bindAugmentSlots(tileInv, 5, this.tile.augSize());
 
         this.bindPlayerInventory(inventory);
     }

@@ -1,0 +1,6 @@
+{
+  "parent": "thermal_addon_chemreactor:block/chemical_reactor",
+  "textures": {
+    "north": "thermal_addon_chemreactor:block/chemical_reactor_active"
+  }
+}

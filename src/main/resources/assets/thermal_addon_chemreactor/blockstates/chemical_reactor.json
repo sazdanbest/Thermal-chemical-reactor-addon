@@ -1,8 +1,13 @@
 {
   "variants": {
-    "facing=north": { "model": "thermal_addon_chemreactor:block/chemical_reactor" },
-    "facing=south": { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 180 },
-    "facing=west":  { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 270 },
-    "facing=east":  { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 90 }
+    "facing=north,active=false": { "model": "thermal_addon_chemreactor:block/chemical_reactor" },
+    "facing=south,active=false": { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 180 },
+    "facing=west,active=false":  { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 270 },
+    "facing=east,active=false":  { "model": "thermal_addon_chemreactor:block/chemical_reactor", "y": 90 },
+
+    "facing=north,active=true": { "model": "thermal_addon_chemreactor:block/chemical_reactor_active" },
+    "facing=south,active=true": { "model": "thermal_addon_chemreactor:block/chemical_reactor_active", "y": 180 },
+    "facing=west,active=true":  { "model": "thermal_addon_chemreactor:block/chemical_reactor_active", "y": 270 },
+    "facing=east,active=true":  { "model": "thermal_addon_chemreactor:block/chemical_reactor_active", "y": 90 }
   }
 }

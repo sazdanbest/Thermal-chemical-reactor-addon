@@ -1,4 +1,5 @@
 {
   "block.thermal_addon_chemreactor.chemical_reactor": "Chemical Reactor",
-  "itemGroup.thermal_addon_chemreactor": "Thermal Addon: Chemical Reactor"
+  "itemGroup.thermal_addon_chemreactor": "Thermal Addon: Chemical Reactor",
+  "info.thermal_addon_chemreactor.chemical_reactor.0": "Carries out chemical reactions between fluids and materials.\n\nSometimes it even produces what you actually needed."
 }

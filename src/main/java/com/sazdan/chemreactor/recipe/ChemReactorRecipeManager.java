@@ -42,7 +42,15 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
 
     protected final Map<List<Object>, IMachineRecipe> recipeMap = new Object2ObjectOpenHashMap<>();
     protected final Set<ComparableItemStack> validItems = new ObjectOpenHashSet<>();
-    protected final Set<Fluid> validFluids = new ObjectOpenHashSet<>();
+    // Позиционные наборы валидных жидкостей — отдельно для бака 0 и бака 1 (по образцу
+    // PressRecipeManager.validInputs/validDies, у которого слот 0 ("input") и слот 1 ("die")
+    // тоже валидируются раздельно). Раньше был один общий Set<Fluid> на оба бака — из-за этого
+    // любой бак принимал любую жидкость рецепта, и при заливке через ведро/жидкостную ячейку
+    // одна и та же жидкость могла одновременно занять оба входных бака. Позиционность здесь
+    // жёстко привязана к тому же порядку, что и в JSON рецепта/ChemReactorRecipe (см. "Рецепты"):
+    // первая жидкость в "ingredients" — только бак 0, вторая — только бак 1.
+    protected final Set<Fluid> validFluidsTank0 = new ObjectOpenHashSet<>();
+    protected final Set<Fluid> validFluidsTank1 = new ObjectOpenHashSet<>();
 
     public static ChemReactorRecipeManager instance() {
         return INSTANCE;
@@ -56,14 +64,21 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         return validItems.contains(makeComparable(item));
     }
 
-    public boolean validFluid(FluidStack fluid) {
+    // tankIndex — 0 или 1, соответствует индексу входного бака в ChemReactorTile.tankInv
+    // (0 и 1 — входные, 2 — выходной, для него этот метод не вызывается).
+    public boolean validFluid(int tankIndex, FluidStack fluid) {
+        if (fluid.isEmpty()) {
+            return false;
+        }
+        Set<Fluid> validFluids = tankIndex == 0 ? validFluidsTank0 : validFluidsTank1;
         return validFluids.contains(fluid.getFluid());
     }
 
     protected void clear() {
         recipeMap.clear();
         validItems.clear();
-        validFluids.clear();
+        validFluidsTank0.clear();
+        validFluidsTank1.clear();
     }
 
     // Из рецепта (Ingredient/FluidIngredient, у каждого может быть несколько вариантов
@@ -119,10 +134,12 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
                 validItems.add(makeComparable(item));
             }
         }
-        for (FluidStack fluid : inputFluids) {
-            if (!fluid.isEmpty()) {
-                validFluids.add(fluid.getFluid());
-            }
+        // Позиционно: inputFluids.get(0) — только бак 0, inputFluids.get(1) — только бак 1.
+        if (inputFluids.size() > 0 && !inputFluids.get(0).isEmpty()) {
+            validFluidsTank0.add(inputFluids.get(0).getFluid());
+        }
+        if (inputFluids.size() > 1 && !inputFluids.get(1).isEmpty()) {
+            validFluidsTank1.add(inputFluids.get(1).getFluid());
         }
 
         recipeMap.put(keyFromStacks(inputItems, inputFluids), recipe);

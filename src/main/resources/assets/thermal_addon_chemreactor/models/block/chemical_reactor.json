@@ -1,9 +1,7 @@
 {
-  "parent": "minecraft:block/orientable",
+  "parent": "thermal:block/machine_base",
   "textures": {
-    "top": "thermal:block/machines/machine_top",
-    "side": "thermal:block/machines/machine_side",
-    "front": "thermal_addon_chemreactor:block/chemical_reactor"
+    "north": "thermal_addon_chemreactor:block/chemical_reactor"
   }
 }
 
