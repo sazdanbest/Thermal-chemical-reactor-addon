@@ -32,10 +32,12 @@ public class ChemReactorContainer extends TileCoFHContainer {
 
         // Индексы 0-1 — входные предметные слоты, 2-3 — выходные
         // (именно в этом порядке они были добавлены в ChemReactorTile.inventory).
-        this.addSlot(new SlotCoFH(tileInv, 0, 53, 12));
-        this.addSlot(new SlotCoFH(tileInv, 1, 53, 34));
-        this.addSlot(new SlotCoFH(tileInv, 2, 116, 12));
-        this.addSlot(new SlotCoFH(tileInv, 3, 116, 34));
+        // Координаты = позиция рамки слота на экране (см. ChemReactorScreen) + 1px,
+        // т.к. сам предмет рисуется на 1px внутрь рамки (как в vanilla/Thermal).
+        this.addSlot(new SlotCoFH(tileInv, 0, 38, 53));
+        this.addSlot(new SlotCoFH(tileInv, 1, 58, 53));
+        this.addSlot(new SlotCoFH(tileInv, 2, 119, 22));
+        this.addSlot(new SlotCoFH(tileInv, 3, 119, 46));
 
         this.bindPlayerInventory(inventory);
     }
