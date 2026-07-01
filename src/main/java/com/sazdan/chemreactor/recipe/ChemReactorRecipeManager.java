@@ -38,8 +38,6 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
 
     private static final ChemReactorRecipeManager INSTANCE = new ChemReactorRecipeManager();
 
-    protected static final int DEFAULT_ENERGY = 4000;
-
     protected final Map<List<Object>, IMachineRecipe> recipeMap = new Object2ObjectOpenHashMap<>();
     protected final Set<ComparableItemStack> validItems = new ObjectOpenHashSet<>();
     // Позиционные наборы валидных жидкостей — отдельно для бака 0 и бака 1 (по образцу
@@ -57,7 +55,7 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
     }
 
     private ChemReactorRecipeManager() {
-        super(DEFAULT_ENERGY);
+        super(ChemReactorRecipeTypes.DEFAULT_ENERGY);
     }
 
     public boolean validItem(ItemStack item) {

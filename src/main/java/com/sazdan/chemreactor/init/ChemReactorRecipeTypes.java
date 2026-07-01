@@ -15,6 +15,14 @@ public class ChemReactorRecipeTypes {
 
     public static final String ID_CHEM_REACTOR = "chem_reactor";
 
+    // Единственный источник истины для энергии рецепта по умолчанию (если в JSON нет поля
+    // "energy") — используется и сериализатором (ChemReactorRecipeSerializers), и менеджером
+    // (ChemReactorRecipeManager, конструктор AbstractManager). Раньше оба класса держали
+    // одинаковое магическое число 4000 независимо друг от друга — при изменении одного из них
+    // легко забыть про второй, т.к. они физически рассинхронизировались бы молча (компилятор
+    // не подскажет).
+    public static final int DEFAULT_ENERGY = 4000;
+
     public static final DeferredRegister<RecipeType<?>> RECIPE_TYPES =
             DeferredRegister.create(ForgeRegistries.RECIPE_TYPES, ChemReactorAddon.MOD_ID);
 

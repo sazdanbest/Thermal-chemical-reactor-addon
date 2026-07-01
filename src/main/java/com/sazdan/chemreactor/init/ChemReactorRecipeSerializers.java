@@ -14,13 +14,12 @@ import net.minecraftforge.registries.RegistryObject;
 // и жидкостей, "result", "energy" и т.п.) — писать свой парсер JSON не нужно.
 public class ChemReactorRecipeSerializers {
 
-    // Энергия по умолчанию, если в JSON рецепта поле "energy" не указано явно.
-    public static final int DEFAULT_ENERGY = 4000;
-
     public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
             DeferredRegister.create(ForgeRegistries.RECIPE_SERIALIZERS, ChemReactorAddon.MOD_ID);
 
+    // Энергия по умолчанию, если в JSON рецепта поле "energy" не указано явно — берём из
+    // ChemReactorRecipeTypes.DEFAULT_ENERGY (единственный источник истины, см. комментарий там).
     public static final RegistryObject<MachineRecipeSerializer<ChemReactorRecipe>> CHEM_REACTOR_SERIALIZER =
             RECIPE_SERIALIZERS.register(ChemReactorRecipeTypes.ID_CHEM_REACTOR,
-                    () -> new MachineRecipeSerializer<>(ChemReactorRecipe::new, DEFAULT_ENERGY));
+                    () -> new MachineRecipeSerializer<>(ChemReactorRecipe::new, ChemReactorRecipeTypes.DEFAULT_ENERGY));
 }

@@ -131,16 +131,24 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
-// Подставляем номер версии мода и т.п. в resources (используется в mods.toml через ${file.jarVersion})
+// Подставляем номер версии мода и т.п. в resources (используется в mods.toml через ${mod_version}
+// и в pack.mcmeta через ${mod_id}).
 tasks.named('processResources', ProcessResources).configure {
     var replaceProperties = [
             minecraft_version: '1.19.2',
             forge_version    : '43.3.5',
-            mod_version      : project.version
+            mod_version      : project.version,
+            mod_id           : project.mod_id
     ]
     inputs.properties replaceProperties
 
     filesMatching('META-INF/mods.toml') {
+        expand replaceProperties + [project: project]
+    }
+    // pack.mcmeta ссылается на ${mod_id} в описании ресурспака/датапака — раньше эта подстановка
+    // не была подключена вообще (только mods.toml проходил через expand), и в итоговый jar
+    // попадала буквальная строка "${mod_id} resources" вместо настоящего имени мода.
+    filesMatching('pack.mcmeta') {
         expand replaceProperties + [project: project]
     }
 }
