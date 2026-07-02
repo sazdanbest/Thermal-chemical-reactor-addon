@@ -1,16 +1,19 @@
 package com.sazdan.chemreactor.recipe;
 
 import cofh.core.util.helpers.FluidHelper;
+import cofh.core.util.helpers.ItemHelper;
 import cofh.lib.api.fluid.IFluidStackHolder;
 import cofh.lib.api.inventory.IItemStackHolder;
 import cofh.lib.fluid.FluidIngredient;
 import cofh.lib.util.crafting.ComparableItemStack;
 import cofh.thermal.lib.util.managers.AbstractManager;
 import cofh.thermal.lib.util.managers.IRecipeManager;
+import cofh.thermal.lib.util.recipes.IMachineInventory;
 import cofh.thermal.lib.util.recipes.IThermalInventory;
 import cofh.thermal.lib.util.recipes.ThermalRecipe;
 import cofh.thermal.lib.util.recipes.internal.IMachineRecipe;
 import cofh.thermal.lib.util.recipes.internal.SimpleMachineRecipe;
+import com.mojang.logging.LogUtils;
 import com.sazdan.chemreactor.init.ChemReactorRecipeTypes;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
@@ -19,24 +22,46 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraftforge.fluids.FluidStack;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 // ChemReactorRecipeManager — синглтон, который хранит все загруженные рецепты реактора
 // и ищет подходящий по содержимому тайла. По образцу cofh.thermal.core...BottlerRecipeManager
 // (1 предмет + 1 жидкость на входе), но расширен на 2 предметных слота + 2 бака,
 // как у нашего реактора.
 //
-// Важно: совпадение позиционное, как и у CoFH-машин с несколькими входами (см. PressRecipeManager,
-// слот "die" всегда slot[1]) — у первого рецепта это значит: предмет (sulfur_dust) кладётся
-// в слот 0, latex — в бак 0, light_oil — в бак 1.
+// Правила совпадения (после переработки под "нестандартные" рецепты, в т.ч. из KubeJS):
+//   - ЖИДКОСТИ — строго позиционные: первая жидкость в "ingredients" обязана быть в баке 0,
+//     вторая — в баке 1 (как у CoFH-машин с несколькими входами, см. PressRecipeManager,
+//     у которого слот "die" всегда slot[1]).
+//   - ПРЕДМЕТЫ — НЕ позиционные: порядок раскладывания реагентов по двум входным слотам
+//     не важен (sulfur+tar == tar+sulfur), ключ поиска сортирует предметы канонически.
+//   - Любой вход может быть ПУСТЫМ: рецепт может использовать 0-2 предмета и 0-2 жидкости
+//     (но хотя бы что-то одно). Неиспользуемые рецептом слоты/баки должны быть пустыми
+//     в машине — иначе содержимое не совпадает с рецептом и цикл не начнётся.
 public class ChemReactorRecipeManager extends AbstractManager implements IRecipeManager {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private static final ChemReactorRecipeManager INSTANCE = new ChemReactorRecipeManager();
+
+    // Физические ограничения машины (см. ChemReactorTile): 2 входных предметных слота,
+    // 2 входных бака, 2 выходных предметных слота, 1 выходной бак. Рецепты, объявляющие
+    // больше — отклоняются целиком с warn-логом (см. addRecipe(ThermalRecipe)): лучше
+    // громко не загрузить рецепт, чем молча проигнорировать часть его ингредиентов.
+    public static final int MAX_INPUT_ITEMS = 2;
+    public static final int MAX_INPUT_FLUIDS = 2;
+    public static final int MAX_OUTPUT_ITEMS = 2;
+    public static final int MAX_OUTPUT_FLUIDS = 1;
 
     protected final Map<List<Object>, IMachineRecipe> recipeMap = new Object2ObjectOpenHashMap<>();
     protected final Set<ComparableItemStack> validItems = new ObjectOpenHashSet<>();
@@ -86,6 +111,22 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         List<Ingredient> items = recipe.getInputItems();
         List<FluidIngredient> fluids = recipe.getInputFluids();
 
+        // Валидация под физические слоты машины. Рецепт с лишними ингредиентами раньше
+        // молча терял всё сверх первых двух — теперь отклоняется целиком с понятным логом
+        // (актуально для рецептов из KubeJS, где легко опечататься).
+        if (items.size() > MAX_INPUT_ITEMS || fluids.size() > MAX_INPUT_FLUIDS
+                || recipe.getOutputItems().size() > MAX_OUTPUT_ITEMS
+                || recipe.getOutputFluids().size() > MAX_OUTPUT_FLUIDS) {
+            LOGGER.warn("Chemical Reactor recipe {} rejected: too many ingredients/results "
+                            + "(max {} input items, {} input fluids, {} output items, {} output fluid)",
+                    recipe.getId(), MAX_INPUT_ITEMS, MAX_INPUT_FLUIDS, MAX_OUTPUT_ITEMS, MAX_OUTPUT_FLUIDS);
+            return;
+        }
+        if (items.isEmpty() && fluids.isEmpty()) {
+            LOGGER.warn("Chemical Reactor recipe {} rejected: it has no inputs at all", recipe.getId());
+            return;
+        }
+
         List<ItemStack> item0Options = items.size() > 0
                 ? Arrays.asList(items.get(0).getItems()) : List.of(ItemStack.EMPTY);
         List<ItemStack> item1Options = items.size() > 1
@@ -99,8 +140,28 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
             for (ItemStack item1 : item1Options) {
                 for (FluidStack fluid0 : fluid0Options) {
                     for (FluidStack fluid1 : fluid1Options) {
-                        addRecipe(recipe.getEnergy(), recipe.getXp(),
-                                Arrays.asList(item0, item1), Arrays.asList(fluid0, fluid1),
+                        // ВАЖНО: пустые заглушки (EMPTY) из списков вычищаются ЗДЕСЬ и не
+                        // попадают внутрь SimpleMachineRecipe. Раньше рецепт с одной жидкостью
+                        // хранил inputFluids = [latex, FluidStack.EMPTY], из-за чего
+                        // getInputFluidCounts() отдавал лишний счётчик "0" для пустого бака,
+                        // а MachineBlockEntity.resolveInputs() вызывал на нём modify(-0) —
+                        // FluidStack.EMPTY.setAmount() бросает IllegalStateException
+                        // ("Can't modify the empty stack") и валит сервер при завершении цикла.
+                        List<ItemStack> inputItems = new ArrayList<>(2);
+                        if (!item0.isEmpty()) {
+                            inputItems.add(item0);
+                        }
+                        if (!item1.isEmpty()) {
+                            inputItems.add(item1);
+                        }
+                        List<FluidStack> inputFluids = new ArrayList<>(2);
+                        if (!fluid0.isEmpty()) {
+                            inputFluids.add(fluid0);
+                        }
+                        if (!fluid1.isEmpty()) {
+                            inputFluids.add(fluid1);
+                        }
+                        addRecipe(recipe.getEnergy(), recipe.getXp(), inputItems, inputFluids,
                                 recipe.getOutputItems(), recipe.getOutputItemChances(), recipe.getOutputFluids());
                     }
                 }
@@ -125,18 +186,16 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         }
 
         energy = (int) ((float) energy * getDefaultScale());
-        SimpleMachineRecipe recipe = new SimpleMachineRecipe(energy, experience, inputItems, inputFluids, outputItems, chance, outputFluids);
+        ChemReactorMachineRecipe recipe = new ChemReactorMachineRecipe(energy, experience, inputItems, inputFluids, outputItems, chance, outputFluids);
 
         for (ItemStack item : inputItems) {
-            if (!item.isEmpty()) {
-                validItems.add(makeComparable(item));
-            }
+            validItems.add(makeComparable(item));
         }
         // Позиционно: inputFluids.get(0) — только бак 0, inputFluids.get(1) — только бак 1.
-        if (inputFluids.size() > 0 && !inputFluids.get(0).isEmpty()) {
+        if (inputFluids.size() > 0) {
             validFluidsTank0.add(inputFluids.get(0).getFluid());
         }
-        if (inputFluids.size() > 1 && !inputFluids.get(1).isEmpty()) {
+        if (inputFluids.size() > 1) {
             validFluidsTank1.add(inputFluids.get(1).getFluid());
         }
 
@@ -144,34 +203,56 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         return recipe;
     }
 
+    // --- Ключ поиска рецепта ---
+    // Ключ = [предметы, отсортированные канонически] + [хэш жидкости бака 0, хэш жидкости бака 1].
+    //   - Предметы сортируются (см. sortedComparables), поэтому порядок раскладывания реагентов
+    //     по входным слотам НЕ важен.
+    //   - Жидкости — по одной ячейке на КАЖДЫЙ бак (0 = бак пуст), поэтому позиция жидкости
+    //     важна: рецепт [latex, -] совпадает только когда latex в баке 0, а бак 1 пуст.
+    //     Раньше пустые баки просто пропускались — из-за этого жидкость из бака 1 могла
+    //     "съехать" на позицию бака 0 в ключе, и рецепт совпадал при физически неверной
+    //     раскладке (а resolveInputs() потом списывал бы из не того бака).
+
     protected List<Object> keyFromStacks(List<ItemStack> items, List<FluidStack> fluids) {
-        List<Object> key = new ArrayList<>();
+        List<ComparableItemStack> comparables = new ArrayList<>(items.size());
         for (ItemStack item : items) {
             if (!item.isEmpty()) {
-                key.add(makeComparable(item));
+                comparables.add(makeComparable(item));
             }
         }
-        for (FluidStack fluid : fluids) {
-            if (!fluid.isEmpty()) {
-                key.add(FluidHelper.fluidHashcodeNoTag(fluid));
-            }
+        List<Object> key = new ArrayList<>(comparables.size() + MAX_INPUT_FLUIDS);
+        key.addAll(sortedComparables(comparables));
+        for (int k = 0; k < MAX_INPUT_FLUIDS; ++k) {
+            key.add(k < fluids.size() && !fluids.get(k).isEmpty()
+                    ? FluidHelper.fluidHashcodeNoTag(fluids.get(k)) : 0);
         }
         return key;
     }
 
     protected List<Object> keyFromInventory(List<? extends IItemStackHolder> inputSlots, List<? extends IFluidStackHolder> inputTanks) {
-        List<Object> key = new ArrayList<>();
+        List<ComparableItemStack> comparables = new ArrayList<>(inputSlots.size());
         for (IItemStackHolder slot : inputSlots) {
             if (!slot.isEmpty()) {
-                key.add(makeComparable(slot.getItemStack()));
+                comparables.add(makeComparable(slot.getItemStack()));
             }
         }
-        for (IFluidStackHolder tank : inputTanks) {
-            if (!tank.isEmpty()) {
-                key.add(FluidHelper.fluidHashcodeNoTag(tank.getFluidStack()));
-            }
+        List<Object> key = new ArrayList<>(comparables.size() + MAX_INPUT_FLUIDS);
+        key.addAll(sortedComparables(comparables));
+        for (int k = 0; k < MAX_INPUT_FLUIDS; ++k) {
+            key.add(k < inputTanks.size() && !inputTanks.get(k).isEmpty()
+                    ? FluidHelper.fluidHashcodeNoTag(inputTanks.get(k).getFluidStack()) : 0);
         }
         return key;
+    }
+
+    // Канонический порядок предметов в ключе — по hashCode ComparableItemStack (одинаковые
+    // предметы дают одинаковый hashCode, поэтому рецептная и инвентарная стороны сортируются
+    // согласованно). Этим и достигается нечувствительность к порядку входных слотов.
+    protected static List<ComparableItemStack> sortedComparables(List<ComparableItemStack> comparables) {
+        if (comparables.size() > 1) {
+            comparables.sort(Comparator.comparingInt(Object::hashCode));
+        }
+        return comparables;
     }
 
     @Override
@@ -196,6 +277,65 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         // публичный getAllRecipesFor(...), который внутри вызывает тот же byType().
         for (ChemReactorRecipe recipe : recipeManager.getAllRecipesFor(ChemReactorRecipeTypes.CHEM_REACTOR.get())) {
             addRecipe(recipe);
+        }
+    }
+
+    // Внутренний рецепт реактора. Отличие от SimpleMachineRecipe — счётчики потребления
+    // выровнены ПО РЕАЛЬНЫМ СЛОТАМ/БАКАМ инвентаря, а не по списку ингредиентов рецепта:
+    //   - SimpleMachineRecipe.getInputItemCounts() возвращает [кол-во ингредиента 0, ингредиента 1,
+    //     ...] в порядке объявления рецепта, а MachineBlockEntity.validateInputs()/resolveInputs()
+    //     применяет i-й счётчик к i-му СЛОТУ — корректно, только если раскладка в машине буквально
+    //     совпадает с порядком объявления. У нас предметы разрешено класть в любом порядке,
+    //     поэтому счётчик каждого ингредиента ищет "свой" слот по совпадению предмета.
+    //   - Для жидкостей порядок жёсткий (ингредиент k = бак k), поэтому счётчики просто
+    //     раскладываются по индексам баков; незадействованные баки получают 0
+    //     (ChemReactorTile.resolveInputs() нулевые счётчики пропускает — см. там же почему
+    //     это критично для пустых баков).
+    protected static class ChemReactorMachineRecipe extends SimpleMachineRecipe {
+
+        public ChemReactorMachineRecipe(int energy, float experience,
+                                         List<ItemStack> inputItems, List<FluidStack> inputFluids,
+                                         List<ItemStack> outputItems, List<Float> chance, List<FluidStack> outputFluids) {
+            super(energy, experience, inputItems, inputFluids, outputItems, chance, outputFluids);
+        }
+
+        // По образцу BaseMachineRecipe.getInputItemCounts() (сопоставление по содержимому
+        // инвентаря), но с флагами used[] — иначе два одинаковых требования рецепта
+        // "прилипли" бы к одному и тому же слоту.
+        @Override
+        public List<Integer> getInputItemCounts(IMachineInventory inventory) {
+            List<? extends IItemStackHolder> slots = inventory.inputSlots();
+            if (this.inputItems.isEmpty() || slots.isEmpty()) {
+                return Collections.emptyList();
+            }
+            int[] ret = new int[slots.size()];
+            boolean[] used = new boolean[slots.size()];
+            for (ItemStack input : this.inputItems) {
+                for (int j = 0; j < ret.length; ++j) {
+                    if (!used[j] && ItemHelper.itemsEqual(input, slots.get(j).getItemStack())) {
+                        used[j] = true;
+                        ret[j] = input.getCount();
+                        break;
+                    }
+                }
+            }
+            return IntStream.of(ret).boxed().collect(Collectors.toList());
+        }
+
+        // Жидкости позиционны: ингредиент k живёт строго в баке k (это гарантирует ключ
+        // поиска — рецепт вообще не совпадёт при другой раскладке), поэтому счётчики
+        // раскладываются по индексам напрямую.
+        @Override
+        public List<Integer> getInputFluidCounts(IMachineInventory inventory) {
+            List<? extends IFluidStackHolder> tanks = inventory.inputTanks();
+            if (this.inputFluids.isEmpty() || tanks.isEmpty()) {
+                return Collections.emptyList();
+            }
+            int[] ret = new int[tanks.size()];
+            for (int k = 0; k < this.inputFluids.size() && k < ret.length; ++k) {
+                ret[k] = this.inputFluids.get(k).getAmount();
+            }
+            return IntStream.of(ret).boxed().collect(Collectors.toList());
         }
     }
 }

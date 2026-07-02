@@ -121,6 +121,34 @@ public class ChemReactorTile extends MachineBlockEntity {
         return this.curRecipe != null;
     }
 
+    // --- Списание входов по завершении цикла ---
+    // Родительский MachineBlockEntity.resolveInputs() применяет i-й счётчик из
+    // itemInputCounts/fluidInputCounts к i-му слоту/баку БЕЗУСЛОВНО, даже если счётчик равен 0,
+    // а слот/бак пуст. Для предметов это безобидно (consume(0) на пустом ItemStack ничего не
+    // делает), а вот FluidStorageCoFH.modify(0) на пустом баке вызывает
+    // FluidStack.EMPTY.setAmount() -> IllegalStateException "Can't modify the empty stack"
+    // и роняет сервер тиком тайла ровно в момент завершения цикла. У наших рецептов счётчики
+    // выровнены по всем слотам/бакам машины (см. ChemReactorMachineRecipe в
+    // ChemReactorRecipeManager), т.е. нули для незадействованных входов — норма, а не ошибка:
+    // рецепт имеет право занимать не все входы (например, 1 жидкость + 2 предмета из KubeJS).
+    @Override
+    protected void resolveInputs() {
+        var slots = inputSlots();
+        for (int i = 0; i < itemInputCounts.size() && i < slots.size(); ++i) {
+            int count = itemInputCounts.get(i);
+            if (count > 0) {
+                slots.get(i).consume(count);
+            }
+        }
+        var tanks = inputTanks();
+        for (int i = 0; i < fluidInputCounts.size() && i < tanks.size(); ++i) {
+            int count = fluidInputCounts.get(i);
+            if (count > 0) {
+                tanks.get(i).modify(-count);
+            }
+        }
+    }
+
     // Хранилище опыта пока не используем (XP не выдаётся этой машиной) —
     // оставляем дефолтное значение родителя.
     // (getBaseXpStorage() не переопределяем, родитель даст 2500 по умолчанию,

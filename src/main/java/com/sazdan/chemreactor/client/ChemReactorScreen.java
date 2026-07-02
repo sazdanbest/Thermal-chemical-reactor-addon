@@ -3,13 +3,17 @@ package com.sazdan.chemreactor.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import cofh.core.client.gui.ContainerScreenCoFH;
+import cofh.core.client.gui.element.ElementConditionalLayered;
 import cofh.core.client.gui.element.panel.AugmentPanel;
 import cofh.core.client.gui.element.panel.ConfigPanel;
 import cofh.core.client.gui.element.panel.RSControlPanel;
 import cofh.core.client.gui.element.panel.SecurityPanel;
+import cofh.core.util.helpers.FluidHelper;
 import cofh.core.util.helpers.GuiHelper;
+import cofh.core.util.helpers.RenderHelper;
 import cofh.lib.util.helpers.SecurityHelper;
 import cofh.thermal.core.client.gui.ThermalGuiHelper;
+import com.sazdan.chemreactor.ChemReactorAddon;
 import com.sazdan.chemreactor.block.entity.ChemReactorTile;
 import com.sazdan.chemreactor.inventory.ChemReactorContainer;
 import net.minecraft.network.chat.Component;
@@ -88,8 +92,22 @@ public class ChemReactorScreen extends ContainerScreenCoFH<ChemReactorContainer>
         this.addPanel(new SecurityPanel(this, this.tile, SecurityHelper.getID(this.player)));
         this.addPanel(new AugmentPanel(this, this.menu::getNumAugmentSlots, this.menu.getAugmentSlots()));
         this.addPanel(new RSControlPanel(this, this.tile));
+        // ConfigPanel: 5 из 6 квадратиков-превью граней — штатные хелперы Thermal (верх/низ/бока/
+        // зад, они честно откатываются на общие текстуры machine_top/machine_side/machine_bottom —
+        // блок их и в мире использует через thermal:block/machine_base). А вот центральный
+        // квадратик (лицевая грань) собираем сами: createDefaultMachineConfigFace() ищет спрайт
+        // строго в неймспейсе Thermal ("thermal:block/machines/machine_" + name), не находит наш
+        // и молча откатывался на безликую machine_side — из-за этого в панели вместо лицевой
+        // панели реактора рисовался обычный бок машины. Порядок элементов в массиве фиксированный
+        // (так их раскладывает ConfigPanel): top, left, face, right, bottom, back.
         this.addPanel(new ConfigPanel(this, this.tile, this.tile, this.tile::getFacing)
-                .addConditionals(ThermalGuiHelper.createDefaultMachineConfigs(this, this.name, this.tile)));
+                .addConditionals(
+                        ThermalGuiHelper.createDefaultMachineConfigTop(this, this.name, this.tile),
+                        ThermalGuiHelper.createDefaultMachineConfigLeft(this, this.name, this.tile),
+                        createMachineConfigFace(),
+                        ThermalGuiHelper.createDefaultMachineConfigRight(this, this.name, this.tile),
+                        ThermalGuiHelper.createDefaultMachineConfigBottom(this, this.name, this.tile),
+                        ThermalGuiHelper.createDefaultMachineConfigBack(this, this.name, this.tile)));
 
         if (this.tile.getEnergyStorage() != null && this.tile.getEnergyStorage().getMaxEnergyStored() > 0) {
             this.addPanel(ThermalGuiHelper.createDefaultEnergyUserPanel(this, this.tile));
@@ -110,6 +128,27 @@ public class ChemReactorScreen extends ContainerScreenCoFH<ChemReactorContainer>
                 GuiHelper.createSmallInputFluidStorage(this, TANK_INPUT_1_X, TANK_Y, this.tile.getTank(1), this.tile), this.tile, 1));
         this.addElement(GuiHelper.setClearable(
                 GuiHelper.createMediumOutputFluidStorage(this, TANK_OUTPUT_X, TANK_OUTPUT_Y, this.tile.getTank(2), this.tile), this.tile, 2));
+    }
+
+    // Центральный квадратик ConfigPanel (лицевая грань машины). Один в один повторяет
+    // ThermalGuiHelper.createDefaultMachineConfigFace(), только спрайты — наши текстуры блока
+    // (обычная + активная, обе уже вшиты в атлас блоков, т.к. на них ссылается модель
+    // chemical_reactor.json/_active.json). Слои снизу вверх: жидкость процесса (если
+    // getRenderFluid() не пуст — как у Bottler/Brewer), лицевая текстура для выкл/вкл состояния.
+    // На случай будущего переименования текстур — тот же откат на общую machine_side, что и у
+    // хелпера Thermal (textureExists проверяет наличие спрайта в атласе).
+    private ElementConditionalLayered createMachineConfigFace() {
+        String texture = ChemReactorAddon.MOD_ID + ":block/chemical_reactor";
+        String activeTexture = ChemReactorAddon.MOD_ID + ":block/chemical_reactor_active";
+        return (ElementConditionalLayered) new ElementConditionalLayered(this)
+                .addSprite(() -> RenderHelper.getFluidTexture(this.tile.getRenderFluid()),
+                        () -> FluidHelper.color(this.tile.getRenderFluid()),
+                        () -> !this.tile.getRenderFluid().isEmpty())
+                .addSprite(RenderHelper.textureExists(texture)
+                        ? texture : "thermal:block/machines/machine_side", () -> !this.tile.isActive)
+                .addSprite(RenderHelper.textureExists(activeTexture)
+                        ? activeTexture : "thermal:block/machines/machine_side", () -> this.tile.isActive)
+                .setSize(16, 16);
     }
 
     @Override
