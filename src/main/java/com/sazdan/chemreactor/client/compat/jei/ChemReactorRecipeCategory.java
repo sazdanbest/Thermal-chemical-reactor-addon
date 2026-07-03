@@ -1,5 +1,6 @@
 package com.sazdan.chemreactor.client.compat.jei;
 
+import cofh.core.util.helpers.ItemHelper;
 import cofh.lib.fluid.FluidIngredient;
 import cofh.thermal.core.compat.jei.TCoreJeiPlugin;
 import cofh.thermal.lib.compat.jei.Drawables;
@@ -11,6 +12,7 @@ import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.drawable.IDrawableAnimated;
 import mezz.jei.api.gui.drawable.IDrawableStatic;
+import mezz.jei.api.gui.ingredient.IRecipeSlotTooltipCallback;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.helpers.IGuiHelper;
 import mezz.jei.api.recipe.IFocusGroup;
@@ -22,6 +24,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraftforge.fluids.FluidStack;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -127,15 +130,44 @@ public class ChemReactorRecipeCategory extends ThermalRecipeCategory<ChemReactor
                 inputFluids.size() < 2 ? Collections.emptyList() : List.of(inputFluids.get(1).getFluids()),
                 4000, this.tankOverlayInput, 32);
 
-        IRecipeSlotBuilder itemOut0 = builder.addSlot(RecipeIngredientRole.OUTPUT, ITEM_OUT_0_X + 1, ITEM_OUT_0_Y + 1);
-        if (!outputItems.isEmpty()) {
-            itemOut0.addItemStack(outputItems.get(0))
-                    .addTooltipCallback(TCoreJeiPlugin.defaultOutputTooltip(outputChances.get(0)));
+        // Выходные предметы группируются по РАЗНЫМ предметам — так же, как их складывает
+        // сама машина (MachineBlockEntity.resolveOutputs() докладывает совпадающий предмет
+        // в тот же слот). Несколько записей одного предмета с разными шансами (например
+        // "1 + 50% + 25%" — случайно 1-3 шт.) показываются ОДНИМ слотом с объединённым
+        // тултипом по всем шансам, а не дублируются по двум слотам. Групп не больше
+        // MAX_OUTPUT_ITEMS=2 (это гарантирует валидация в ChemReactorRecipeManager).
+        List<List<Integer>> outputGroups = new ArrayList<>();
+        for (int i = 0; i < outputItems.size(); ++i) {
+            if (outputItems.get(i).isEmpty()) {
+                continue;
+            }
+            List<Integer> group = null;
+            for (List<Integer> g : outputGroups) {
+                if (ItemHelper.itemsEqualWithTags(outputItems.get(g.get(0)), outputItems.get(i))) {
+                    group = g;
+                    break;
+                }
+            }
+            if (group == null) {
+                group = new ArrayList<>();
+                outputGroups.add(group);
+            }
+            group.add(i);
         }
-        IRecipeSlotBuilder itemOut1 = builder.addSlot(RecipeIngredientRole.OUTPUT, ITEM_OUT_1_X + 1, ITEM_OUT_1_Y + 1);
-        if (outputItems.size() > 1) {
-            itemOut1.addItemStack(outputItems.get(1))
-                    .addTooltipCallback(TCoreJeiPlugin.defaultOutputTooltip(outputChances.get(1)));
+
+        int[] outX = {ITEM_OUT_0_X, ITEM_OUT_1_X};
+        int[] outY = {ITEM_OUT_0_Y, ITEM_OUT_1_Y};
+        for (int s = 0; s < 2; ++s) {
+            IRecipeSlotBuilder slot = builder.addSlot(RecipeIngredientRole.OUTPUT, outX[s] + 1, outY[s] + 1);
+            if (s < outputGroups.size()) {
+                List<Integer> group = outputGroups.get(s);
+                slot.addItemStack(outputItems.get(group.get(0)));
+                List<Float> groupChances = new ArrayList<>(group.size());
+                for (int idx : group) {
+                    groupChances.add(outputChances.get(idx));
+                }
+                slot.addTooltipCallback(chanceTooltip(groupChances));
+            }
         }
 
         addFluidSlot(builder, RecipeIngredientRole.OUTPUT, TANK_OUT_X, TANK_OUT_Y,
@@ -143,10 +175,37 @@ public class ChemReactorRecipeCategory extends ThermalRecipeCategory<ChemReactor
                 8000, this.tankOverlayOutput, 40);
     }
 
+    // Тултип для выходного слота. Для одной записи — штатный тултип Thermal
+    // (TCoreJeiPlugin.defaultOutputTooltip). Для нескольких записей одного предмета
+    // (случайное количество) — тултип каждого шанса подряд, чтобы игрок видел все
+    // строки "Шанс: X%" сразу (guaranteed-запись с шансом -1/100% свою строку не рисует).
+    private static IRecipeSlotTooltipCallback chanceTooltip(List<Float> chances) {
+        if (chances.size() == 1) {
+            return TCoreJeiPlugin.defaultOutputTooltip(chances.get(0));
+        }
+        List<IRecipeSlotTooltipCallback> callbacks = new ArrayList<>(chances.size());
+        for (float chance : chances) {
+            callbacks.add(TCoreJeiPlugin.defaultOutputTooltip(chance));
+        }
+        return (view, tooltip) -> {
+            for (IRecipeSlotTooltipCallback cb : callbacks) {
+                cb.onTooltip(view, tooltip);
+            }
+        };
+    }
+
     private void addFluidSlot(IRecipeLayoutBuilder builder, RecipeIngredientRole role, int x, int y,
                                List<FluidStack> fluids, int capacity, IDrawableStatic overlay, int renderHeight) {
+        // ВАЖНО: ёмкость для рендера — РЕАЛЬНАЯ ёмкость бака (4000/8000 mB), НЕ через
+        // TCoreJeiPlugin.tankSize(capacity). tankSize() при включённом клиент-конфиге Thermal
+        // ThermalClientConfig.jeiBucketTanks возвращает 1000 (одно ведро) вместо настоящей
+        // ёмкости — тогда JEI считает заполнение относительно 1000 mB, и, например, 500 mB
+        // рисуется как половина бака, хотя в самой машине (ёмкость 4000) это 1/8. Разработчик
+        // просил, чтобы визуальное заполнение в JEI совпадало с машиной, поэтому берём реальную
+        // ёмкость напрямую — 500/4000 = 1/8, как в GUI. (Тултип по-прежнему показывает точный
+        // объём "X / Y mB" через defaultFluidTooltip, но полоса теперь пропорциональна машине.)
         ((IRecipeSlotBuilder) builder.addSlot(role, x + 1, y + 1).addIngredients(ForgeTypes.FLUID_STACK, fluids))
-                .setFluidRenderer(TCoreJeiPlugin.tankSize(capacity), false, 16, renderHeight)
+                .setFluidRenderer(capacity, false, 16, renderHeight)
                 .setOverlay(overlay, 0, 0)
                 .addTooltipCallback(TCoreJeiPlugin.defaultFluidTooltip());
     }

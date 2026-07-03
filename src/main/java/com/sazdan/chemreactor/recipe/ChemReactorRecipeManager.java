@@ -114,8 +114,16 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         // Валидация под физические слоты машины. Рецепт с лишними ингредиентами раньше
         // молча терял всё сверх первых двух — теперь отклоняется целиком с понятным логом
         // (актуально для рецептов из KubeJS, где легко опечататься).
+        //
+        // Выходные ПРЕДМЕТЫ считаются по числу РАЗНЫХ предметов, а не по числу записей:
+        // несколько выходных записей одного и того же предмета не занимают несколько слотов —
+        // MachineBlockEntity.resolveOutputs() докладывает совпадающий предмет в уже занятый
+        // слот (grow), а не в новый. Это и даёт "случайное количество" одного предмета: запись
+        // вида "1 шт. + 50% + 25% того же предмета" бросает три независимых кубика и складывает
+        // выпавшее в один слот (итог 1-3 шт.). По числу записей такой рецепт (3 > 2) ложно
+        // отклонялся бы как "слишком много результатов", хотя ему нужен всего один слот.
         if (items.size() > MAX_INPUT_ITEMS || fluids.size() > MAX_INPUT_FLUIDS
-                || recipe.getOutputItems().size() > MAX_OUTPUT_ITEMS
+                || distinctOutputItemSlots(recipe.getOutputItems()) > MAX_OUTPUT_ITEMS
                 || recipe.getOutputFluids().size() > MAX_OUTPUT_FLUIDS) {
             LOGGER.warn("Chemical Reactor recipe {} rejected: too many ingredients/results "
                             + "(max {} input items, {} input fluids, {} output items, {} output fluid)",
@@ -167,6 +175,31 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
                 }
             }
         }
+    }
+
+    // Сколько ФИЗИЧЕСКИХ выходных предметных слотов реально займёт рецепт. Совпадающие
+    // (itemsEqualWithTags — та же проверка, по которой resolveOutputs() докладывает предмет
+    // в существующий слот) записи считаются за один слот; пустые заглушки игнорируются.
+    // Используется только для валидации лимита MAX_OUTPUT_ITEMS — сам список выходов
+    // (со всеми записями и их шансами) в рецепт передаётся без изменений.
+    protected static int distinctOutputItemSlots(List<ItemStack> outputs) {
+        List<ItemStack> distinct = new ArrayList<>(outputs.size());
+        for (ItemStack out : outputs) {
+            if (out.isEmpty()) {
+                continue;
+            }
+            boolean seen = false;
+            for (ItemStack d : distinct) {
+                if (ItemHelper.itemsEqualWithTags(d, out)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                distinct.add(out);
+            }
+        }
+        return distinct.size();
     }
 
     protected IMachineRecipe addRecipe(int energy, float experience, List<ItemStack> inputItems, List<FluidStack> inputFluids,
