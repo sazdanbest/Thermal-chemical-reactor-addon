@@ -26,6 +26,17 @@ import javax.annotation.Nullable;
 //
 public class ChemReactorTile extends MachineBlockEntity {
 
+    // Входные баки вынесены в поля, потому что их валидаторы перекрёстные: валидатор бака 0
+    // в момент заливки читает ТЕКУЩЕЕ содержимое бака 1 и наоборот ("инициализация рецепта",
+    // см. ChemReactorRecipeManager.validFluid(int, FluidStack, FluidStack)). Лямбда-валидатор
+    // вычисляется лениво (при fill()), а не при создании бака, поэтому ссылка на соседний бак,
+    // который в момент создания первого ещё не присвоен, безопасна — к моменту первого fill()
+    // оба поля давно инициализированы конструктором. Поля НЕ final намеренно: blank-final
+    // запрещено читать в лямбде до присвоения (javac: "might not have been initialized"),
+    // а валидатору бака 0 нужна ссылка на ещё не созданный бак 1.
+    protected FluidStorageCoFH inputTank0;
+    protected FluidStorageCoFH inputTank1;
+
     public ChemReactorTile(BlockPos pos, BlockState state) {
         // Передаём BlockEntityType, зарегистрированный в ChemReactorBlockEntities.
         // .get() распаковывает RegistryObject в реальный объект BlockEntityType.
@@ -60,15 +71,24 @@ public class ChemReactorTile extends MachineBlockEntity {
 
         // --- Настройка баков под жидкости (fluid tanks) ---
         // 2 входных бака по 4000 mB, 1 выходной бак на 8000 mB — как в спецификации.
-        // validFluid(0, ...)/validFluid(1, ...) — ПОЗИЦИОННО: бак 0 принимает только первую жидкость
-        // рецепта, бак 1 — только вторую (см. ChemReactorRecipeManager). Раньше оба бака проверялись
-        // одним общим набором "жидкость встречается хоть где-то в рецепте" — из-за этого при заливке
-        // одной и той же жидкости (например, через несколько вёдер подряд или жидкостную ячейку) она
-        // могла занять сразу оба входных бака, хотя по спецификации один бак = одна жидкость.
+        // Валидаторы входных баков — ПОЗИЦИОННЫЕ и ПЕРЕКРЁСТНЫЕ ("инициализация рецепта"):
+        //   - пока ОБА бака пусты, каждый принимает любую жидкость, валидную для его позиции
+        //     (бак 0 — только "первые" жидкости рецептов, бак 1 — только "вторые");
+        //   - как только один бак занят, второй принимает ТОЛЬКО жидкость, встречающуюся с ней
+        //     в паре хоть в одном рецепте (латекс в баке 0 -> бак 1 примет только light_oil).
+        // Состояние нигде не хранится: валидатор в момент fill() читает текущее содержимое
+        // соседнего бака, поэтому опустевший (выработанный циклом или очищенный Alt+Shift+кликом
+        // по баку в GUI — это штатный CoFH StorageClearPacket, уже подключён в ChemReactorScreen
+        // через GuiHelper.setClearable) бак автоматически снимает ограничение. Загрузке из NBT
+        // валидатор не мешает — FluidStorageCoFH.read()/setFluidStack() идут мимо isFluidValid().
         // Выходной бак — валидатор (fluid) -> false, по той же причине, что и выходные предметные
         // слоты выше: игрок не должен вручную заливать/сливать через него, только машина.
-        this.tankInv.addTank(new FluidStorageCoFH(4000, (fluid) -> this.filter.valid(fluid) && ChemReactorRecipeManager.instance().validFluid(0, fluid)), StorageGroup.INPUT);
-        this.tankInv.addTank(new FluidStorageCoFH(4000, (fluid) -> this.filter.valid(fluid) && ChemReactorRecipeManager.instance().validFluid(1, fluid)), StorageGroup.INPUT);
+        this.inputTank0 = new FluidStorageCoFH(4000, (fluid) -> this.filter.valid(fluid)
+                && ChemReactorRecipeManager.instance().validFluid(0, fluid, this.inputTank1.getFluidStack()));
+        this.inputTank1 = new FluidStorageCoFH(4000, (fluid) -> this.filter.valid(fluid)
+                && ChemReactorRecipeManager.instance().validFluid(1, fluid, this.inputTank0.getFluidStack()));
+        this.tankInv.addTank(this.inputTank0, StorageGroup.INPUT);
+        this.tankInv.addTank(this.inputTank1, StorageGroup.INPUT);
         this.tankInv.addTank(new FluidStorageCoFH(8000, (fluid) -> false), StorageGroup.OUTPUT);
 
         // --- Аугмент-слоты ---

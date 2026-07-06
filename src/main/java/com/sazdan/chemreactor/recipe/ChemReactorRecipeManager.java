@@ -74,6 +74,18 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
     // первая жидкость в "ingredients" — только бак 0, вторая — только бак 1.
     protected final Set<Fluid> validFluidsTank0 = new ObjectOpenHashSet<>();
     protected final Set<Fluid> validFluidsTank1 = new ObjectOpenHashSet<>();
+    // "Инициализация рецепта" жидкостью: как только один из входных баков занят, второй бак
+    // принимает только жидкости, которые встречаются С НЕЙ В ПАРЕ хоть в одном рецепте
+    // (латекс в баке 0 -> бак 1 примет только light_oil, если это единственный рецепт с латексом).
+    // Никакого хранимого состояния у тайла нет — валидатор бака в момент заливки смотрит на
+    // текущее содержимое соседнего бака (см. ChemReactorTile), поэтому опустевший/очищенный
+    // Alt+Shift+кликом бак автоматически снимает ограничение, ничего сбрасывать не нужно.
+    //   validPairsTank1ByTank0: жидкость бака 0 -> все жидкости, допустимые в баке 1 рядом с ней;
+    //   validPairsTank0ByTank1: обратное направление (жидкость бака 1 -> допустимые в баке 0).
+    // Рецепт с ОДНОЙ жидкостью пары не даёт: пока его жидкость в баке 0, второй бак не примет
+    // ничего (у такого рецепта второй бак обязан быть пустым — иначе цикл всё равно не начнётся).
+    protected final Map<Fluid, Set<Fluid>> validPairsTank1ByTank0 = new Object2ObjectOpenHashMap<>();
+    protected final Map<Fluid, Set<Fluid>> validPairsTank0ByTank1 = new Object2ObjectOpenHashMap<>();
 
     public static ChemReactorRecipeManager instance() {
         return INSTANCE;
@@ -89,6 +101,8 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
 
     // tankIndex — 0 или 1, соответствует индексу входного бака в ChemReactorTile.tankInv
     // (0 и 1 — входные, 2 — выходной, для него этот метод не вызывается).
+    // Базовая (без контекста соседнего бака) проверка: жидкость встречается на этой позиции
+    // хоть в одном рецепте. Используется, когда соседний бак пуст — см. перегрузку ниже.
     public boolean validFluid(int tankIndex, FluidStack fluid) {
         if (fluid.isEmpty()) {
             return false;
@@ -97,11 +111,32 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         return validFluids.contains(fluid.getFluid());
     }
 
+    // Проверка с учётом "инициализации рецепта" содержимым соседнего входного бака:
+    //   - соседний бак пуст -> реактор ещё не "закреплён" за рецептом, принимаем любую жидкость,
+    //     валидную для этой позиции (старое поведение);
+    //   - соседний бак занят -> принимаем только жидкость, образующую с ней пару хоть в одном
+    //     рецепте (см. validPairsTank0ByTank1/validPairsTank1ByTank0 выше). Направление пары
+    //     позиционное: для бака 0 партнёр ищется среди "первых" жидкостей рецептов с "второй"
+    //     жидкостью из бака 1, и наоборот.
+    public boolean validFluid(int tankIndex, FluidStack fluid, FluidStack otherTankFluid) {
+        if (fluid.isEmpty()) {
+            return false;
+        }
+        if (otherTankFluid.isEmpty()) {
+            return validFluid(tankIndex, fluid);
+        }
+        Map<Fluid, Set<Fluid>> pairs = tankIndex == 0 ? validPairsTank0ByTank1 : validPairsTank1ByTank0;
+        Set<Fluid> allowed = pairs.get(otherTankFluid.getFluid());
+        return allowed != null && allowed.contains(fluid.getFluid());
+    }
+
     protected void clear() {
         recipeMap.clear();
         validItems.clear();
         validFluidsTank0.clear();
         validFluidsTank1.clear();
+        validPairsTank1ByTank0.clear();
+        validPairsTank0ByTank1.clear();
     }
 
     // Из рецепта (Ingredient/FluidIngredient, у каждого может быть несколько вариантов
@@ -230,6 +265,12 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         }
         if (inputFluids.size() > 1) {
             validFluidsTank1.add(inputFluids.get(1).getFluid());
+            // Пара для "инициализации рецепта" (см. validPairsTank1ByTank0/...): двухжидкостный
+            // рецепт разрешает своей второй жидкости заливаться рядом с первой и наоборот.
+            Fluid fluid0 = inputFluids.get(0).getFluid();
+            Fluid fluid1 = inputFluids.get(1).getFluid();
+            validPairsTank1ByTank0.computeIfAbsent(fluid0, f -> new ObjectOpenHashSet<>()).add(fluid1);
+            validPairsTank0ByTank1.computeIfAbsent(fluid1, f -> new ObjectOpenHashSet<>()).add(fluid0);
         }
 
         recipeMap.put(keyFromStacks(inputItems, inputFluids), recipe);
