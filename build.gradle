@@ -13,7 +13,7 @@ plugins {
 }
 
 // --- Базовые параметры мода. Меняются один раз, используются ниже. ---
-version = '1.0.6'
+version = '1.0.7'
 group = 'com.sazdan.chemreactor' // ваш maven-package, как договаривались
 archivesBaseName = 'thermal_addon_chemreactor'
 

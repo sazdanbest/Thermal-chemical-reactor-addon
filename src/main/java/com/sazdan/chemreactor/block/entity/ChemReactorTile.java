@@ -1,5 +1,7 @@
 package com.sazdan.chemreactor.block.entity;
 
+import cofh.core.util.helpers.FluidHelper;
+import cofh.core.util.helpers.ItemHelper;
 import cofh.lib.api.StorageGroup;
 import cofh.lib.fluid.FluidStorageCoFH;
 import cofh.lib.inventory.ItemStorageCoFH;
@@ -12,8 +14,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.fluids.FluidStack;
+
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 // ChemReactorTile — это "мозг" блока: вся реальная логика машины живёт здесь,
 // а не в ChemReactorBlock (блок — это просто физическая оболочка в мире).
@@ -126,11 +133,9 @@ public class ChemReactorTile extends MachineBlockEntity {
 
     // --- Подключение рецептов ---
     // cacheRecipe() ищет подходящий рецепт через ChemReactorRecipeManager и заполняет
-    // itemInputCounts/fluidInputCounts — это единственное, что нужно переопределить:
-    // validateInputs()/validateOutputs()/processStart()/processFinish() в MachineBlockEntity
-    // уже реализованы универсально (по числу слотов/баков) и сами умеют писать как в выходные
-    // предметные слоты, так и в выходной бак (у нас, в отличие от MachineBottlerTile, есть и то,
-    // и другое) — переопределять их отдельно под жидкий выход не требуется.
+    // itemInputCounts/fluidInputCounts. validateInputs()/processStart()/processFinish()
+    // в MachineBlockEntity реализованы универсально (по числу слотов/баков) и не переопределяются;
+    // validateOutputs() и resolveInputs() переопределены — см. комментарии к ним выше/ниже.
     @Override
     protected boolean cacheRecipe() {
         this.curRecipe = ChemReactorRecipeManager.instance().getRecipe(this);
@@ -139,6 +144,102 @@ public class ChemReactorTile extends MachineBlockEntity {
             this.fluidInputCounts = this.curRecipe.getInputFluidCounts(this);
         }
         return this.curRecipe != null;
+    }
+
+    // --- Проверка, что результатам есть куда лечь (фикс шансовых рецептов) ---
+    // Родительский MachineBlockEntity.validateOutputs() резервирует ПО ОДНОМУ выходному слоту
+    // НА КАЖДУЮ ЗАПИСЬ рецепта (used[i] = true на первой же подошедшей ячейке), НЕ складывая
+    // одинаковые предметы. Шансовый рецепт "случайное количество" из нескольких записей одного
+    // предмета (например [rubber x2, rubber chance:0.5, rubber chance:0.5]) требовал бы у него
+    // 3 свободных слота, а их всего 2 -> validateOutputs() всегда false -> canProcessStart()
+    // никогда не проходит, машина просто не стартует (без ошибок в логе). При этом сама выдача
+    // (resolveOutputs()) одинаковые предметы честно складывает в ОДИН слот (grow) — расходились
+    // именно проверка и выдача. Наша версия сначала ГРУППИРУЕТ записи по одинаковым предметам
+    // (тот же критерий ItemHelper.itemsEqualWithTags, что и в resolveOutputs), а дальше выполняет
+    // родительский алгоритм по группам: одна группа = один физический слот. Валидация лимита
+    // "не больше 2 РАЗНЫХ предметов" уже сделана менеджером при загрузке рецепта
+    // (см. ChemReactorRecipeManager.distinctOutputItemSlots), так что группы всегда помещаются.
+    // Жидкостная часть — без изменений, скопирована из родителя (метод нельзя дополнить частично).
+    @Override
+    protected boolean validateOutputs() {
+        if (curRecipe == null && !cacheRecipe()) {
+            return false;
+        }
+        // Группируем выходные записи по одинаковым предметам, сохраняя порядок первых вхождений
+        // (первая группа обычно содержит гарантированную запись — это важно для ветки
+        // secondaryNullFeature ниже, как у родителя j == 0).
+        List<ItemStack> recipeOutputItems = curRecipe.getOutputItems(this);
+        List<ItemStack> groupedOutputs = new ArrayList<>(recipeOutputItems.size());
+        for (ItemStack recipeOutput : recipeOutputItems) {
+            boolean seen = false;
+            for (ItemStack grouped : groupedOutputs) {
+                if (ItemHelper.itemsEqualWithTags(grouped, recipeOutput)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                groupedOutputs.add(recipeOutput);
+            }
+        }
+
+        // Дальше — родительский алгоритм, но по группам вместо сырых записей.
+        var slotOutputs = outputSlots();
+        boolean[] used = new boolean[slotOutputs.size()];
+        for (int j = 0; j < groupedOutputs.size(); ++j) {
+            ItemStack recipeOutput = groupedOutputs.get(j);
+            boolean matched = false;
+            for (int i = 0; i < slotOutputs.size(); ++i) {
+                if (!used[i]) {
+                    ItemStack output = slotOutputs.get(i).getItemStack();
+                    if (output.getCount() < output.getMaxStackSize() && ItemHelper.itemsEqualWithTags(output, recipeOutput)) {
+                        used[i] = true;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched) {
+                for (int i = 0; i < slotOutputs.size(); ++i) {
+                    if (!used[i] && slotOutputs.get(i).isEmpty()) {
+                        used[i] = true;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched && (j == 0 || !secondaryNullFeature)) {
+                return false;
+            }
+        }
+
+        var tankOutputs = outputTanks();
+        List<FluidStack> recipeOutputFluids = curRecipe.getOutputFluids(this);
+        boolean[] usedTanks = new boolean[tankOutputs.size()];
+        for (FluidStack recipeOutput : recipeOutputFluids) {
+            boolean matched = false;
+            for (int i = 0; i < tankOutputs.size(); ++i) {
+                FluidStack output = tankOutputs.get(i).getFluidStack();
+                if (!usedTanks[i] && tankOutputs.get(i).getSpace() >= recipeOutput.getAmount() && FluidHelper.fluidsEqual(output, recipeOutput)) {
+                    usedTanks[i] = true;
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                for (int i = 0; i < tankOutputs.size(); ++i) {
+                    if (!usedTanks[i] && tankOutputs.get(i).isEmpty()) {
+                        usedTanks[i] = true;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // --- Списание входов по завершении цикла ---
