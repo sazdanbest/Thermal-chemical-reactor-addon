@@ -86,6 +86,13 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
     // ничего (у такого рецепта второй бак обязан быть пустым — иначе цикл всё равно не начнётся).
     protected final Map<Fluid, Set<Fluid>> validPairsTank1ByTank0 = new Object2ObjectOpenHashMap<>();
     protected final Map<Fluid, Set<Fluid>> validPairsTank0ByTank1 = new Object2ObjectOpenHashMap<>();
+    // Ключи, добавленные в recipeMap СИНТЕТИЧЕСКИ (см. addRecipe: рецепт с одним входным
+    // предметом дополнительно регистрируется под ключом "этот предмет в ОБОИХ слотах", чтобы
+    // машина не останавливалась, когда игрок/трубы раскладывают один и тот же реагент по двум
+    // слотам). Нужен, чтобы настоящий рецепт "2 одинаковых предмета" всегда побеждал синтетический
+    // дубль независимо от порядка загрузки рецептов: настоящий put() затирает синтетический и
+    // убирает ключ из этого набора, а синтетический никогда не затирает настоящий.
+    protected final Set<List<Object>> syntheticKeys = new ObjectOpenHashSet<>();
 
     public static ChemReactorRecipeManager instance() {
         return INSTANCE;
@@ -137,6 +144,7 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
         validFluidsTank1.clear();
         validPairsTank1ByTank0.clear();
         validPairsTank0ByTank1.clear();
+        syntheticKeys.clear();
     }
 
     // Из рецепта (Ingredient/FluidIngredient, у каждого может быть несколько вариантов
@@ -273,7 +281,28 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
             validPairsTank0ByTank1.computeIfAbsent(fluid1, f -> new ObjectOpenHashSet<>()).add(fluid0);
         }
 
-        recipeMap.put(keyFromStacks(inputItems, inputFluids), recipe);
+        List<Object> key = keyFromStacks(inputItems, inputFluids);
+        recipeMap.put(key, recipe);
+        // Настоящий рецепт всегда побеждает синтетический дубль под тем же ключом (см. ниже).
+        syntheticKeys.remove(key);
+
+        // Рецепт с ОДНИМ входным предметом дополнительно регистрируется под ключом "тот же
+        // предмет в обоих слотах": иначе сера, разложенная игроком/трубами по двум входным
+        // слотам, давала ключ [sulfur, sulfur], которого нет в карте, и машина просто
+        // останавливалась. Сам рецепт при этом не меняется — его getInputItemCounts() назначает
+        // счётчик потребления только ОДНОМУ слоту (первому подходящему), поэтому машина
+        // постепенно вырабатывает сначала один слот, а когда он опустеет — второй (поиск рецепта
+        // идёт заново на каждом цикле, ключ [sulfur] снова совпадает штатно).
+        if (inputItems.size() == 1) {
+            List<Object> dupKey = keyFromStacks(
+                    List.of(inputItems.get(0), inputItems.get(0)), inputFluids);
+            // Не затираем настоящий рецепт "2 одинаковых предмета", если он уже загружен;
+            // если он загрузится ПОЗЖЕ — его put() выше сам затрёт этот синтетический ключ.
+            if (!recipeMap.containsKey(dupKey) || syntheticKeys.contains(dupKey)) {
+                recipeMap.put(dupKey, recipe);
+                syntheticKeys.add(dupKey);
+            }
+        }
         return recipe;
     }
 
@@ -341,7 +370,9 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
 
     @Override
     public List<IMachineRecipe> getRecipeList() {
-        return new ArrayList<>(recipeMap.values());
+        // distinct() — один рецепт может лежать в карте под двумя ключами (обычным и
+        // синтетическим "предмет в обоих слотах", см. addRecipe), в списке он нужен один раз.
+        return recipeMap.values().stream().distinct().collect(Collectors.toList());
     }
 
     @Override
@@ -375,7 +406,11 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
 
         // По образцу BaseMachineRecipe.getInputItemCounts() (сопоставление по содержимому
         // инвентаря), но с флагами used[] — иначе два одинаковых требования рецепта
-        // "прилипли" бы к одному и тому же слоту.
+        // "прилипли" бы к одному и тому же слоту. Из подходящих слотов ПРЕДПОЧИТАЕТСЯ тот,
+        // где предметов хватает на рецепт (второй проход — fallback на любой совпадающий):
+        // актуально, когда один и тот же реагент разложен по обоим слотам (см. синтетический
+        // ключ в addRecipe) — если в слоте 0 осталась «недостача» (например 1 шт. при рецепте
+        // на 2), счётчик уходит слоту 1 с достаточным запасом, и машина не останавливается.
         @Override
         public List<Integer> getInputItemCounts(IMachineInventory inventory) {
             List<? extends IItemStackHolder> slots = inventory.inputSlots();
@@ -385,12 +420,24 @@ public class ChemReactorRecipeManager extends AbstractManager implements IRecipe
             int[] ret = new int[slots.size()];
             boolean[] used = new boolean[slots.size()];
             for (ItemStack input : this.inputItems) {
+                int fallback = -1;
+                boolean assigned = false;
                 for (int j = 0; j < ret.length; ++j) {
                     if (!used[j] && ItemHelper.itemsEqual(input, slots.get(j).getItemStack())) {
-                        used[j] = true;
-                        ret[j] = input.getCount();
-                        break;
+                        if (slots.get(j).getItemStack().getCount() >= input.getCount()) {
+                            used[j] = true;
+                            ret[j] = input.getCount();
+                            assigned = true;
+                            break;
+                        }
+                        if (fallback < 0) {
+                            fallback = j;
+                        }
                     }
+                }
+                if (!assigned && fallback >= 0) {
+                    used[fallback] = true;
+                    ret[fallback] = input.getCount();
                 }
             }
             return IntStream.of(ret).boxed().collect(Collectors.toList());
