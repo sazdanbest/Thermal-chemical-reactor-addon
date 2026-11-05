@@ -21,5 +21,8 @@ build
 eclipse
 run
 
+# third-party mod jars used for compilation (not part of this project, not redistributed)
+libs/*.jar
+
 # Files from Forge MDK
 forge*changelog.txt

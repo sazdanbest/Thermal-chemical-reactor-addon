@@ -8,7 +8,7 @@ issueTrackerURL = "https://github.com/sazdanbest/Thermal-chemical-reactor-addon/
 
 modLoader = "javafml"          # стандартный загрузчик для Java-модов на Forge
 loaderVersion = "[43,)"        # совместим с Forge 43.x и новее
-license = "All Rights Reserved"
+license = "MIT"
 
 [[mods]]
 modId = "thermal_addon_chemreactor"   # как договаривались — Mod ID

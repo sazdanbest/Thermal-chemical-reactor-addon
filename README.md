@@ -14,6 +14,7 @@ redstone control and the usual Thermal GUI side panels all work out of the box.
 * **Display name:** EN "Chemical Reactor" / RU "Химический реактор"
 * **Package / Maven group:** `com.sazdan.chemreactor`
 * **Author:** sazdan
+* **License:** MIT (see [`LICENSE`](LICENSE))
 
 ## Features
 
@@ -121,9 +122,12 @@ KubeJS/datapack recipe:
 
 ## Building from source
 
-Requires **JDK 17** (Gradle 7.6.1 / ForgeGradle 5 do not run on newer JDKs). All third‑party mod jars
-used for compilation are resolved from the local `libs/` folder (`flatDir`), so no extra repositories are
-needed.
+Requires **JDK 17** (Gradle 7.6.1 / ForgeGradle 5 do not run on newer JDKs).
+
+The mods used for compilation are **not** shipped with this repository (they belong to their own
+authors) — download them into `libs/` before the first build. Exact file names, versions and a note on
+extracting `thermal_core` are in [`libs/README.md`](libs/README.md). Gradle resolves them from that folder
+through `flatDir`, so no extra repositories are needed.
 
 ```bash
 # point JAVA_HOME at a JDK 17 first, e.g.
@@ -154,7 +158,8 @@ src/main/java/com/sazdan/chemreactor/
 ├── inventory/ChemReactorContainer.java# menu / slot layout
 └── recipe/                            # recipe + recipe manager
 src/main/resources/                    # mods.toml, assets (models, textures, lang), data (recipes)
-libs/                                  # third-party mod jars used for compilation
+libs/                                  # third-party mod jars needed for compilation (see libs/README.md,
+                                       #   the jars themselves are not tracked by git)
 CLAUDE.md                              # detailed development notes (Russian)
 ```
 
@@ -174,12 +179,21 @@ CLAUDE.md                              # detailed development notes (Russian)
 * **KubeJS / Rhino / Architectury** (LatvianModder and contributors) — optional script integration.
 * **Industrial Foregoing / Titanium** (Buuz135 and contributors) — used by the bundled example recipe.
 * The Forge MDK files in the repository root (`README.txt`, `CREDITS.txt`, `changelog.txt`,
-  `LICENSE.txt`) come from the Minecraft Forge MDK and keep their original licenses.
+  `LICENSE-FORGE-MDK.txt`) come from the Minecraft Forge MDK and keep their original licenses. The mod
+  jars in `libs/` belong to their respective authors as well — that is why they are not tracked by git.
 
 ## License
 
-All Rights Reserved — see `LICENSE.txt` and the `license` field in `src/main/resources/META-INF/mods.toml`.
-Source code is published for reference, modpack integration and pull requests.
+**MIT** — see [`LICENSE`](LICENSE). The mod's license field (`mod_license` in `gradle.properties`,
+`license` in `src/main/resources/META-INF/mods.toml`) is set to `MIT` accordingly.
+
+The MIT license covers this project's source code and assets only (everything under `src/`, the build
+scripts and the documentation written for this project). It does **not** cover:
+
+* the third-party mod jars used as compile dependencies — they are not distributed with this repository
+  (see [`libs/README.md`](libs/README.md)) and each one stays under its own author's license;
+* the Minecraft Forge MDK files in the repository root (`README.txt`, `CREDITS.txt`, `changelog.txt`,
+  `LICENSE-FORGE-MDK.txt`), which keep their original licenses.
 
 ---
 
@@ -191,5 +205,7 @@ Source code is published for reference, modpack integration and pull requests.
 и конфигурации сторон Thermal; есть шансовые выходы, опциональная интеграция с JEI и KubeJS.
 Рецепты — обычный JSON в `data/<namespace>/recipes/chem_reactor/` или скрипт KubeJS
 `event.recipes.thermal_addon_chemreactor.chem_reactor(...)`. Своего крафта у блока пока нет —
-выдаётся через `/give`. Автор мода — **sazdan**.
+выдаётся через `/give`. Автор мода — **sazdan**, лицензия — **MIT** (`LICENSE` в корне).
+Джарники сторонних модов в `libs/` в репозиторий не входят и в git не отслеживаются — что и откуда
+скачать, написано в `libs/README.md`.
 
